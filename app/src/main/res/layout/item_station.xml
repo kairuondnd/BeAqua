@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginVertical="8dp"
+    app:cardCornerRadius="28dp"
+    app:cardElevation="0dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="@color/divider"
+    app:cardBackgroundColor="@color/white">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="20dp">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardIconStation"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            app:cardCornerRadius="100dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/sky_blue_light"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+            <ImageView
+                android:id="@+id/ivStationIcon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="14dp"
+                android:src="@drawable/ic_home"
+                app:tint="@color/primary" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/tvStationName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="Station Name"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toStartOf="@+id/btnViewInventory"
+            app:layout_constraintStart_toEndOf="@+id/cardIconStation"
+            app:layout_constraintTop_toTopOf="@+id/cardIconStation" />
+
+        <TextView
+            android:id="@+id/tvStationAddress"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Address placeholder"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintEnd_toEndOf="@+id/tvStationName"
+            app:layout_constraintStart_toStartOf="@+id/tvStationName"
+            app:layout_constraintTop_toBottomOf="@+id/tvStationName" />
+
+        <TextView
+            android:id="@+id/tvStationOperatingStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_pill_status"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="Open now • Daily: 8:00 AM - 6:00 PM"
+            android:textColor="@color/success"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/btnViewInventory"
+            app:layout_constraintStart_toStartOf="@+id/tvStationName"
+            app:layout_constraintTop_toBottomOf="@+id/tvStationAddress" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnViewInventory"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="Visit"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            app:cornerRadius="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

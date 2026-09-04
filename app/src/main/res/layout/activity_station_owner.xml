@@ -1,0 +1,798 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawerLayoutStation"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_mesh_gradient">
+
+    <!-- Main Content -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Header Section -->
+        <com.google.android.material.appbar.AppBarLayout
+            android:id="@+id/stationHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/white"
+            app:elevation="0dp">
+
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="72dp"
+                android:paddingHorizontal="20dp">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@drawable/beaqua"
+                        android:scaleType="centerInside" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:text="BeAqua Station"
+                        android:textColor="@color/primary"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="-0.01"/>
+                </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/btnMenuStationContainer"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:cardBackgroundColor="@color/background">
+                    <ImageButton
+                        android:id="@+id/btnMenuStation"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:contentDescription="Open navigation menu"
+                        android:padding="10dp"
+                        android:src="@drawable/ic_nav_menu"
+                        app:tint="@color/text_primary" />
+                </com.google.android.material.card.MaterialCardView>
+
+            </RelativeLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/divider" />
+
+        </com.google.android.material.appbar.AppBarLayout>
+
+        <!-- Main content area -->
+        <FrameLayout
+            android:id="@+id/stationContentFrame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/stationHeader" />
+
+    </RelativeLayout>
+
+    <!-- Side Navigation Menu -->
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/navViewStation"
+        android:layout_width="320dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="#F4F7FB"
+        app:itemIconTint="@color/primary"
+        app:itemTextColor="@color/text_primary">
+
+        <LinearLayout
+            android:id="@+id/sideNavStation"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="vertical">
+
+            <!-- Side Nav Header -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="16dp"
+                app:cardBackgroundColor="@android:color/transparent"
+                app:cardCornerRadius="28dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_nav_header_modern"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="64dp"
+                            android:layout_height="64dp"
+                            app:cardCornerRadius="32dp"
+                            app:cardElevation="6dp"
+                            app:strokeColor="#4DFFFFFF"
+                            app:strokeWidth="2dp">
+                            <ImageView
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@color/white"
+                                android:padding="14dp"
+                                android:src="@drawable/ic_nav_profile"
+                                app:tint="@color/primary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvNavStationName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:letterSpacing="0.02"
+                                android:text="Station Owner"
+                                android:textColor="@color/white"
+                                android:textSize="20sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvNavStationRole"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:alpha="0.92"
+                                android:text="Station Owner"
+                                android:textColor="#E6FFFFFF"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            app:cardBackgroundColor="#1AFFFFFF"
+                            app:cardCornerRadius="18dp"
+                            app:cardElevation="0dp"
+                            app:strokeColor="#33FFFFFF"
+                            app:strokeWidth="1dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="14dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Water Station"
+                                    android:textColor="#E6FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="4dp"
+                                    android:text="Owner console"
+                                    android:textColor="@color/white"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            app:cardBackgroundColor="#1AFFFFFF"
+                            app:cardCornerRadius="18dp"
+                            app:cardElevation="0dp"
+                            app:strokeColor="#33FFFFFF"
+                            app:strokeWidth="1dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="14dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Live View"
+                                    android:textColor="#E6FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="4dp"
+                                    android:text="Orders + sales"
+                                    android:textColor="@color/white"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="32dp"
+                    android:paddingBottom="24dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_marginBottom="10dp"
+                        android:text="STATION CONTROL"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.15"
+                        android:visibility="gone"/>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="16dp"
+                        android:visibility="gone"
+                        app:cardBackgroundColor="@android:color/white"
+                        app:cardCornerRadius="28dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="@color/divider"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="16dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:letterSpacing="0.15"
+                                android:text="QUICK ACTIONS"
+                                android:textColor="@color/text_hint"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <GridLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:alignmentMode="alignMargins"
+                                android:columnCount="2">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSideOrders"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="58dp"
+                                    android:layout_margin="6dp"
+                                    android:layout_columnWeight="1"
+                                    android:backgroundTint="#EEF4FF"
+                                    android:text="Orders"
+                                    android:textAllCaps="false"
+                                    android:textColor="@color/primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    app:cornerRadius="18dp"
+                                    app:icon="@drawable/ic_nav_orders"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="10dp"
+                                    app:iconTint="@color/primary"
+                                    app:strokeColor="#D4E3FF"
+                                    app:strokeWidth="1dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSideInventory"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="58dp"
+                                    android:layout_margin="6dp"
+                                    android:layout_columnWeight="1"
+                                    android:backgroundTint="#ECFDF3"
+                                    android:text="Containers"
+                                    android:textAllCaps="false"
+                                    android:textColor="@color/success"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    app:cornerRadius="18dp"
+                                    app:icon="@drawable/ic_nav_inventory"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="10dp"
+                                    app:iconTint="@color/success"
+                                    app:strokeColor="#C7F1D9"
+                                    app:strokeWidth="1dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSideAnalytics"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="58dp"
+                                    android:layout_margin="6dp"
+                                    android:layout_columnWeight="1"
+                                    android:backgroundTint="#FFF1F2"
+                                    android:text="Analytics"
+                                    android:textAllCaps="false"
+                                    android:textColor="@color/error"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    app:cornerRadius="18dp"
+                                    app:icon="@drawable/ic_nav_analytics"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="10dp"
+                                    app:iconTint="@color/error"
+                                    app:strokeColor="#FBCDD4"
+                                    app:strokeWidth="1dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSideMessages"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="58dp"
+                                    android:layout_margin="6dp"
+                                    android:layout_columnWeight="1"
+                                    android:backgroundTint="#F3E8FF"
+                                    android:text="Messages"
+                                    android:textAllCaps="false"
+                                    android:textColor="#7C3AED"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    app:cornerRadius="18dp"
+                                    app:icon="@drawable/ic_nav_messages"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="10dp"
+                                    app:iconTint="#7C3AED"
+                                    app:strokeColor="#E0C8FF"
+                                    app:strokeWidth="1dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSideSettings"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="58dp"
+                                    android:layout_margin="6dp"
+                                    android:layout_columnWeight="1"
+                                    android:backgroundTint="#FEF9C3"
+                                    android:text="Settings"
+                                    android:textAllCaps="false"
+                                    android:textColor="@color/warning"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    app:cornerRadius="18dp"
+                                    app:icon="@drawable/ic_nav_settings"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="10dp"
+                                    app:iconTint="@color/warning"
+                                    app:strokeColor="#F6E08B"
+                                    app:strokeWidth="1dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSideProfile"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="58dp"
+                                    android:layout_margin="6dp"
+                                    android:layout_columnWeight="1"
+                                    android:backgroundTint="#F8FAFC"
+                                    android:text="Profile"
+                                    android:textAllCaps="false"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    app:cornerRadius="18dp"
+                                    app:icon="@drawable/ic_nav_profile"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="10dp"
+                                    app:iconTint="@color/text_secondary"
+                                    app:strokeColor="@color/divider"
+                                    app:strokeWidth="1dp" />
+                            </GridLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_marginBottom="10dp"
+                        android:letterSpacing="0.15"
+                        android:text="OWNER MENU"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:cardBackgroundColor="@android:color/white"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="2dp"
+                        app:strokeColor="#E6ECF4"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="8dp">
+
+                    <!-- Dashboard -->
+                    <LinearLayout
+                        android:id="@+id/navStationHome"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:layout_marginBottom="4dp"
+                        android:background="@drawable/bg_nav_item_active"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp">
+
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon_active"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_dashboard"
+                            app:tint="@color/white" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:text="Dashboard"
+                            android:textColor="@color/primary"
+                            android:textStyle="bold"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- Orders -->
+                    <LinearLayout
+                        android:id="@+id/navStationOrders"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_orders"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:text="Orders"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- Inventory -->
+                    <LinearLayout
+                        android:id="@+id/navStationInventory"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_inventory"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:text="Containers"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- Sales Analytics -->
+                    <LinearLayout
+                        android:id="@+id/navStationAnalytics"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_analytics"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:text="Sales Analytics"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- Water Station Settings -->
+                    <LinearLayout
+                        android:id="@+id/navStationSettings"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_settings"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:text="Water Station Settings"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- Messages -->
+                    <LinearLayout
+                        android:id="@+id/navStationMessages"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_messages"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:text="Messages"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- History -->
+                    <LinearLayout
+                        android:id="@+id/navStationHistory"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_history"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:text="History"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <!-- Feedbacks -->
+                    <LinearLayout
+                        android:id="@+id/navStationFeedbacks"
+                        android:layout_width="match_parent"
+                        android:layout_height="60dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:background="@drawable/bg_nav_item"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_nav_icon"
+                            android:padding="9dp"
+                            android:src="@drawable/ic_nav_feedback"
+                            app:tint="@color/text_secondary" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:text="Feedbacks"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_marginTop="24dp"
+                        android:layout_marginBottom="10dp"
+                        android:letterSpacing="0.15"
+                        android:text="ACCOUNT"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <!-- Profile -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/navStationProfile"
+                        android:layout_width="match_parent"
+                        android:layout_height="64dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardBackgroundColor="@android:color/white"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="1dp"
+                        app:rippleColor="#1A0479C8"
+                        app:strokeColor="#E6ECF4"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingHorizontal="16dp">
+
+                            <com.google.android.material.card.MaterialCardView
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                app:cardBackgroundColor="#EDF5FF"
+                                app:cardCornerRadius="14dp"
+                                app:cardElevation="0dp">
+
+                                <ImageView
+                                    android:layout_width="20dp"
+                                    android:layout_height="20dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_nav_profile"
+                                    app:tint="@color/primary" />
+                            </com.google.android.material.card.MaterialCardView>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="14dp"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Profile Settings"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="Manage owner account"
+                                    android:textColor="@color/text_hint"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="Open profile settings"
+                                android:src="@drawable/ic_nav_chevron"
+                                app:tint="@color/text_hint" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
+            </ScrollView>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnLogoutStation"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="20dp"
+                android:backgroundTint="#FFF0F2"
+                android:gravity="center"
+                android:text="Sign Out"
+                android:textAllCaps="false"
+                android:textColor="@color/error"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:icon="@drawable/ic_nav_logout"
+                app:iconTint="@color/error"
+                app:iconSize="20dp"
+                app:iconPadding="10dp"
+                app:cornerRadius="18dp"
+                app:rippleColor="#26FA5252"
+                app:strokeColor="#FFD4DA"
+                app:strokeWidth="1dp"/>
+
+        </LinearLayout>
+    </com.google.android.material.navigation.NavigationView>
+
+</androidx.drawerlayout.widget.DrawerLayout>

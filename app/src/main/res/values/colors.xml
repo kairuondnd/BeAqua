@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand Colors -->
+    <color name="primary">#0077B6</color>
+    <color name="primary_variant">#023E8A</color>
+    <color name="secondary">#0096C7</color>
+    <color name="accent">#48CAE4</color>
+
+    <!-- Neutral Colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="background">#F8FAFC</color>
+    <color name="surface">#FFFFFF</color>
+
+    <!-- Text Colors (Guaranteed Dark for high contrast) -->
+    <color name="text_primary">#000000</color>
+    <color name="text_secondary">#334155</color>
+    <color name="text_hint">#64748B</color>
+
+    <!-- Status Colors -->
+    <color name="error">#E11D48</color>
+    <color name="success">#166534</color>
+    <color name="warning">#92400E</color>
+
+    <!-- UI Elements -->
+    <color name="divider">#CBD5E1</color>
+    <color name="gray_light">#F1F5F9</color>
+
+    <!-- Modern Refresh Colors -->
+    <color name="sky_blue_light">#E0F2FE</color>
+    <color name="mint_soft">#ECFDF5</color>
+    <color name="surface_glass">#80FFFFFF</color>
+    <color name="accent_vibrant">#0EA5E9</color>
+    <color name="purple_soft">#F5F3FF</color>
+    <color name="yellow_soft">#FFFBEB</color>
+    <color name="peach_soft">#FFF1F2</color>
+</resources>

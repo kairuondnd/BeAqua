@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">BeAqua</string>
+    <string name="mapbox_access_token">pk.eyJ1Ijoia3lsZS1rdW1hbGFvIiwiYSI6ImNtbnlzNnBmbDA1bjYzMXB1Y2VlYmVlMnQifQ.Fd3PHoSN-5VdTlqfqv32Ew</string>
+
+    <string-array name="container_types">
+        <item>New Container (with water)</item>
+        <item>Exchange (empty for full)</item>
+    </string-array>
+
+    <string-array name="delivery_slots">
+        <item>Morning (8 AM - 12 PM)</item>
+        <item>Afternoon (12 PM - 4 PM)</item>
+        <item>Evening (4 PM - 8 PM)</item>
+    </string-array>
+
+    <string-array name="payment_methods">
+        <item>Cash on Delivery</item>
+        <item>GCash</item>
+    </string-array>
+
+    <string name="optimized_route_title">Optimized Delivery Route</string>
+    <string name="stops_count_format">%1$d stops planned</string>
+
+    <string name="revenue_analytics">Revenue Analytics</string>
+    <string name="lifetime_revenue">Lifetime Revenue</string>
+    <string name="today">Today</string>
+    <string name="this_month">This Month</string>
+    <string name="monthly_breakdown">MONTHLY BREAKDOWN</string>
+    <string name="select_month_year">Select Month and Year</string>
+    <string name="successful_orders_format">%1$d Successful Orders</string>
+    <string name="revenue_format">₱%1$.2f</string>
+</resources>

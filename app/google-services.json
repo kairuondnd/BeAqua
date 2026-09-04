@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "585421507649",
+    "project_id": "beaquadb",
+    "storage_bucket": "beaquadb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:585421507649:android:6220629d60ea448af2cac0",
+        "android_client_info": {
+          "package_name": "com.example.beaqua"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQHwtTyblbvzjh3BtvFlJ-MR59UvVTv-k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
