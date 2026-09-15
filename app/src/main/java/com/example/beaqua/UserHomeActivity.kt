@@ -347,6 +347,9 @@ class UserHomeActivity : AppCompatActivity() {
         val rvProducts = inventoryView.findViewById<RecyclerView>(R.id.rvStationProducts)
 
         tvStationName.text = station.name
+        inventoryView.findViewById<MaterialButton>(R.id.btnStationMembership).setOnClickListener {
+            showStationDeliveryOptions(station)
+        }
         val stationIsOpen = station.isStationOpen()
         tvOpenStatus.text = station.stationStatusLabel()
         tvOperatingHours.text = station.operatingHoursLabel()
@@ -463,7 +466,7 @@ class UserHomeActivity : AppCompatActivity() {
                         Toast.makeText(this, "Enter a valid quantity", Toast.LENGTH_SHORT).show()
                         return@ProductAdapter
                     }
-                    requirePremium(station) {
+                    withDeliveryAccess(station) {
                         showSubscriptionDialog(
                             station = station,
                             offeringId = product.id,
@@ -510,7 +513,7 @@ class UserHomeActivity : AppCompatActivity() {
                         Toast.makeText(this, "Enter a valid number of empty containers", Toast.LENGTH_SHORT).show()
                         return@ProductAdapter
                     }
-                    requirePremium(station) {
+                    withDeliveryAccess(station) {
                         showRefillInstructionsDialog(station, quantity, subscribe = true)
                     }
                 },
@@ -540,7 +543,7 @@ class UserHomeActivity : AppCompatActivity() {
             setPadding(32, 20, 32, 20)
         }
         AlertDialog.Builder(this)
-            .setTitle(if (subscribe) "Weekly refill exchange" else "Confirm refill exchange")
+            .setTitle(if (subscribe) "Recurring refill exchange" else "Confirm refill exchange")
             .setMessage(
                 "Prepare $quantity empty container(s). " +
                     "The rider will collect them when delivering the refilled containers."
@@ -664,197 +667,59 @@ class UserHomeActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun requirePremium(station: User, onActive: () -> Unit) {
-        val user = currentUser ?: return
-        FirebaseHelper.getStationPremiumMembership(user.username, station.username)
-            .addOnSuccessListener { snapshot ->
-                val membership = snapshot.toObject(StationPremiumMembership::class.java)
-                if (membership?.isActiveFor(user.username, station.username) == true) {
-                    onActive()
-                } else {
-                    val intent = Intent(this, PremiumActivity::class.java)
-                    intent.putExtra(PremiumActivity.EXTRA_USERNAME, user.username)
-                    intent.putExtra(PremiumActivity.EXTRA_STATION_USERNAME, station.username)
+    private fun showStationDeliveryOptions(station: User) {
+        AlertDialog.Builder(this)
+            .setTitle("${station.name} automated deliveries")
+            .setItems(arrayOf("Add automated delivery", "Manage automated deliveries")) { _, choice ->
+                if (choice == 1) {
+                    val intent = Intent(this, SubscriptionActivity::class.java)
+                        .putExtra("USERNAME", currentUser?.username)
+                        .putExtra("STATION_USERNAME", station.username)
                     startActivity(intent)
+                } else {
+                    FirebaseHelper.getProductsByStation(station.username)
+                        .addOnSuccessListener { snapshot ->
+                            val products = snapshot.toObjects(Product::class.java)
+                            val labels = products.map { it.name }.toMutableList()
+                            if (station.refillServiceEnabled && station.refillFee > 0.0) {
+                                labels.add("Water refill (your containers)")
+                            }
+                            if (labels.isEmpty()) {
+                                Toast.makeText(this, "No deliveries are currently offered", Toast.LENGTH_SHORT).show()
+                                return@addOnSuccessListener
+                            }
+                            AlertDialog.Builder(this)
+                                .setTitle("Choose what to deliver")
+                                .setItems(labels.toTypedArray()) { _, index ->
+                                    if (index == products.size) {
+                                        showRefillInstructionsDialog(station, 1, subscribe = true)
+                                    } else {
+                                        val product = products[index]
+                                        showSubscriptionDialog(station, product.id, product.name,
+                                            product.price, 1, product.name)
+                                    }
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        }
+                        .addOnFailureListener {
+                            Toast.makeText(this, "Could not load station offerings", Toast.LENGTH_SHORT).show()
+                        }
                 }
             }
-            .addOnFailureListener {
-                Toast.makeText(
-                    this,
-                    "Connect to the internet to verify Premium for this station",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
+    private fun withDeliveryAccess(station: User, onActive: () -> Unit) { onActive() }
+
     private fun showSubscriptionDialog(
-        station: User,
-        offeringId: String,
-        offeringName: String,
-        offeringPrice: Double,
-        initialQuantity: Int,
-        containerType: String,
-        offeringType: String = OFFERING_PURCHASE,
+        station: User, offeringId: String, offeringName: String, offeringPrice: Double,
+        initialQuantity: Int, containerType: String, offeringType: String = OFFERING_PURCHASE,
         refillInstructions: String = ""
     ) {
         val customer = currentUser ?: return
-        if (customer.address.isBlank()) {
-            AlertDialog.Builder(this)
-                .setTitle("Delivery address required")
-                .setMessage("Add your delivery address in Profile before starting a weekly delivery.")
-                .setPositiveButton("Open profile") { _, _ ->
-                    val intent = Intent(this, UserProfileActivity::class.java)
-                    intent.putExtra("USERNAME", customer.username)
-                    startActivity(intent)
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-            return
-        }
-        val dialogView = layoutInflater.inflate(R.layout.dialog_weekly_subscription, null)
-        val productName = dialogView.findViewById<TextView>(R.id.tvSubscriptionProduct)
-        val quantityInput = dialogView.findViewById<EditText>(R.id.etSubscriptionQuantity)
-        val daySpinner = dialogView.findViewById<Spinner>(R.id.spnSubscriptionDay)
-        val timeSpinner = dialogView.findViewById<Spinner>(R.id.spnSubscriptionTime)
-        val summary = dialogView.findViewById<TextView>(R.id.tvSubscriptionSummary)
-
-        val days = listOf(
-            "Sunday", "Monday", "Tuesday", "Wednesday",
-            "Thursday", "Friday", "Saturday"
-        )
-        val slots = station.etaSettings.customerDeliveryWindows()
-
-        productName.text = "$offeringName from ${station.name}"
-        quantityInput.setText(initialQuantity.coerceAtLeast(1).toString())
-        daySpinner.adapter = android.widget.ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            days
-        )
-        timeSpinner.adapter = android.widget.ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            slots
-        )
-        summary.text = String.format(
-            Locale.getDefault(),
-            "Current product price: ₱%.2f each\nStation delivery fee: ₱%.2f\nPayment: Cash on Delivery",
-            offeringPrice,
-            station.deliveryFee
-        )
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Set weekly delivery")
-            .setView(dialogView)
-            .setPositiveButton("Start subscription", null)
-            .setNegativeButton("Cancel", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val quantity = quantityInput.text.toString().toIntOrNull() ?: 0
-                if (quantity <= 0) {
-                    quantityInput.error = "Enter a valid quantity"
-                    return@setOnClickListener
-                }
-                val day = days[daySpinner.selectedItemPosition]
-                val timeSlot = slots.getOrElse(timeSpinner.selectedItemPosition) {
-                    calculateEta(station.etaSettings)
-                }
-                val subscription = WeeklySubscription(
-                    customerUsername = customer.username,
-                    stationOwnerUsername = station.username,
-                    stationName = station.name,
-                    productId = offeringId,
-                    productName = offeringName,
-                    quantity = quantity,
-                    containerType = containerType,
-                    deliveryDay = day,
-                    deliveryTimeSlot = timeSlot,
-                    nextDeliveryAt = calculateNextDelivery(day),
-                    active = true,
-                    lastStatus = "Scheduled",
-                    offeringType = offeringType,
-                    refillServiceId = if (offeringType == OFFERING_REFILL) offeringId else "",
-                    refillInstructions = refillInstructions,
-                    emptyContainerCount = if (offeringType == OFFERING_REFILL) quantity else 0
-                )
-
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
-                FirebaseHelper.getSubscriptionsForCustomer(customer.username)
-                    .addOnSuccessListener { existingResult ->
-                        val duplicate = existingResult
-                            .toObjects(WeeklySubscription::class.java)
-                            .any {
-                                it.active &&
-                                    it.stationOwnerUsername == station.username &&
-                                    it.offeringType == offeringType &&
-                                    (offeringType == OFFERING_REFILL || it.productId == offeringId)
-                            }
-                        if (duplicate) {
-                            dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                            Toast.makeText(
-                                this,
-                                "You already have an active weekly delivery for this service",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            return@addOnSuccessListener
-                        }
-
-                        FirebaseHelper.addSubscription(subscription)
-                            .addOnSuccessListener {
-                        val formattedDate = SimpleDateFormat(
-                            "EEEE, MMM d",
-                            Locale.getDefault()
-                        ).format(Date(subscription.nextDeliveryAt))
-                        Toast.makeText(
-                            this,
-                            "Weekly delivery starts $formattedDate",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        dialog.dismiss()
-                        openSubscriptions()
-                            }
-                            .addOnFailureListener { error ->
-                                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                                Toast.makeText(
-                                    this,
-                                    "Could not start subscription: ${error.message}",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                    }
-                    .addOnFailureListener {
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                        Toast.makeText(
-                            this,
-                            "Could not check existing subscriptions",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-            }
-        }
-        dialog.show()
-    }
-
-    private fun calculateNextDelivery(dayName: String): Long {
-        val days = listOf(
-            "Sunday", "Monday", "Tuesday", "Wednesday",
-            "Thursday", "Friday", "Saturday"
-        )
-        val targetDay = days.indexOf(dayName) + Calendar.SUNDAY
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 6)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        var daysAhead = (targetDay - calendar.get(Calendar.DAY_OF_WEEK) + 7) % 7
-        if (daysAhead == 0 && calendar.timeInMillis <= System.currentTimeMillis()) {
-            daysAhead = 7
-        }
-        calendar.add(Calendar.DAY_OF_YEAR, daysAhead)
-        return calendar.timeInMillis
+        RecurringDeliveryEditor.show(this, customer, station, preferredProductId = offeringId,
+            initialQuantity = initialQuantity, onSaved = { openSubscriptions() })
     }
 }

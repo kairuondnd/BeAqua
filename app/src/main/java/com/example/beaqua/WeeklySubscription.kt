@@ -11,6 +11,7 @@ data class WeeklySubscription(
     var productId: String = "",
     var productName: String = "",
     var quantity: Int = 1,
+    var repeatEveryDays: Int = 7,
     var containerType: String = "",
     var deliveryDay: String = "",
     var deliveryTimeSlot: String = "",

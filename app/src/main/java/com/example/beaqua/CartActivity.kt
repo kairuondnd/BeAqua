@@ -1,9 +1,7 @@
 package com.example.beaqua
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -11,7 +9,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -36,7 +33,6 @@ class CartActivity : AppCompatActivity() {
     private var currentStationDeliveryFee: Double = 0.0
     private var isRushEnabledAtStation: Boolean = false
 
-    private var isProcessingGCashReturn = false
     private var isFinalizing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,12 +56,8 @@ class CartActivity : AppCompatActivity() {
         
         rvCartItems.layoutManager = LinearLayoutManager(this)
 
-        // 1. Resolve username and detect deep link
-        handleIntent(intent)
-        
         val intentUser = intent.getStringExtra("USERNAME")
-        val dlUser = intent.data?.getQueryParameter("username")
-        val username = intentUser ?: dlUser ?: ""
+        val username = intentUser ?: ""
 
         if (username.isNotEmpty()) {
             FirebaseHelper.getUser(username).addOnSuccessListener { document ->
@@ -87,19 +79,7 @@ class CartActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntent(intent)
         
-        if (isProcessingGCashReturn && currentUser != null && cartItems.isNotEmpty()) {
-            finalizeOrders("GCash", isPaid = true)
-        }
-    }
-
-    private fun handleIntent(intent: Intent) {
-        val data: Uri? = intent.data
-        if (data != null && data.scheme == "beaqua" && data.host == "gcash-callback") {
-            isProcessingGCashReturn = true
-            Log.d("CartActivity", "GCash deep link received")
-        }
     }
 
     private fun loadCartItems() {
@@ -139,9 +119,6 @@ class CartActivity : AppCompatActivity() {
                     }
                     updateUI()
                     
-                    if (isProcessingGCashReturn) {
-                        finalizeOrders("GCash", isPaid = true)
-                    }
                 }
             } else {
                 updateUI()
@@ -261,23 +238,26 @@ class CartActivity : AppCompatActivity() {
     }
 
     private fun initiateGCashPayment() {
-        val total = calculateTotal()
-        val referenceId = "BQA-${System.currentTimeMillis()}"
-        val successUrl = "beaqua://gcash-callback?username=${currentUser?.username}"
-
-        btnCheckout.isEnabled = false
-        Toast.makeText(this, "Preparing GCash...", Toast.LENGTH_SHORT).show()
-
-        XenditHelper.createGCashCharge(referenceId, total, successUrl) { response, error ->
-            runOnUiThread {
-                btnCheckout.isEnabled = true
-                if (error != null) {
-                    Toast.makeText(this, "Payment Error: $error", Toast.LENGTH_LONG).show()
-                } else if (response != null) {
-                    CustomTabsIntent.Builder().build().launchUrl(this, Uri.parse(response.invoiceUrl))
-                }
-            }
+        val stationUsername = cartItems.firstOrNull()?.stationOwnerUsername ?: return
+        if (cartItems.any { it.stationOwnerUsername != stationUsername }) {
+            Toast.makeText(this, "Check out one water station at a time", Toast.LENGTH_LONG).show()
+            return
         }
+        btnCheckout.isEnabled = false
+        FirebaseHelper.getUser(stationUsername).addOnSuccessListener { snapshot ->
+                btnCheckout.isEnabled = true
+                val station = snapshot.toObject(User::class.java)
+                if (station?.isApprovedStationOwner() != true || !station.isStationOpen()) {
+                    Toast.makeText(this, "This station is unavailable", Toast.LENGTH_LONG).show()
+                    return@addOnSuccessListener
+                }
+                GcashQrDialog.show(this, station, calculateTotal()) {
+                    finalizeOrders("GCash", isPaid = false)
+                }
+        }.addOnFailureListener {
+                btnCheckout.isEnabled = true
+                Toast.makeText(this, "Could not load GCash QR code", Toast.LENGTH_LONG).show()
+            }
     }
 
     private fun finalizeOrders(selectedPayment: String, isPaid: Boolean) {
@@ -285,12 +265,10 @@ class CartActivity : AppCompatActivity() {
         val user = currentUser ?: return
         
         if (cartItems.isEmpty()) {
-            isProcessingGCashReturn = false
             return
         }
 
         isFinalizing = true
-        isProcessingGCashReturn = false
         btnCheckout.isEnabled = false
         
         Toast.makeText(this, "Completing order...", Toast.LENGTH_LONG).show()

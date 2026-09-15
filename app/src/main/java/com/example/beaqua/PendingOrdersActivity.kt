@@ -129,7 +129,7 @@ class PendingOrdersActivity : AppCompatActivity() {
             ContainerImageLoader.load(holder.ivContainerImage, order.imageUri)
             val refillPrefix = if (order.isRefill()) "REFILL • " else ""
             holder.tvProductName.text = if (order.isSubscriptionOrder) {
-                "WEEKLY • $refillPrefix${order.productName}"
+                "AUTOMATED • $refillPrefix${order.productName}"
             } else {
                 "$refillPrefix${order.productName}"
             }

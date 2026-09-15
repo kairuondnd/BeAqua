@@ -31,6 +31,7 @@ data class User(
     var refillServiceEnabled: Boolean = false,
     var refillFee: Double = 0.0,
     var premiumPrice: Double = 99.0,
+    var gcashQrUrl: String = "",
     var operatingHours: OperatingHours = OperatingHours()
 ) {
     companion object {

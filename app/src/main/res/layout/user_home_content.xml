@@ -189,7 +189,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="BeAqua Premium"
+                                android:text="Automated Deliveries"
                                 android:textColor="@color/primary"
                                 android:textSize="17sp"
                                 android:textStyle="bold" />
@@ -198,7 +198,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="3dp"
-                                android:text="Unlock automatic weekly water delivery"
+                                android:text="Choose bottles, quantity and repeat interval"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="13sp" />
                         </LinearLayout>

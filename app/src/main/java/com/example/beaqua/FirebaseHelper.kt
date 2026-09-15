@@ -21,7 +21,6 @@ object FirebaseHelper {
     val feedbacksCollection = db.collection("feedbacks")
     val cartCollection = db.collection("cart")
     val subscriptionsCollection = db.collection("subscriptions")
-    val stationPremiumMembershipsCollection = db.collection("station_premium_memberships")
     val notificationsCollection = db.collection("notifications")
 
     // --- User Methods ---
@@ -155,87 +154,21 @@ object FirebaseHelper {
         return usersCollection.document(username).update("etaSettings", etaSettings)
     }
 
-    private fun stationPremiumMembershipId(
-        customerUsername: String,
-        stationOwnerUsername: String
-    ): String = "$customerUsername|$stationOwnerUsername".sha256()
-
-    fun getStationPremiumMembership(
-        customerUsername: String,
-        stationOwnerUsername: String
-    ): Task<DocumentSnapshot> {
-        return stationPremiumMembershipsCollection
-            .document(stationPremiumMembershipId(customerUsername, stationOwnerUsername))
-            .get()
-    }
-
     fun updateStationPricing(
         username: String,
         rushOrderEnabled: Boolean,
         rushOrderFee: Double,
-        deliveryFee: Double,
-        premiumPrice: Double
+        deliveryFee: Double
     ): Task<Void> {
         require(rushOrderFee >= 0.0) { "Rush fee cannot be negative" }
         require(deliveryFee >= 0.0) { "Delivery fee cannot be negative" }
-        require(premiumPrice > 0.0) { "Premium price must be greater than zero" }
         return usersCollection.document(username).update(
             mapOf(
                 "rushOrderEnabled" to rushOrderEnabled,
                 "rushOrderFee" to rushOrderFee,
-                "deliveryFee" to deliveryFee,
-                "premiumPrice" to premiumPrice
+                "deliveryFee" to deliveryFee
             )
         )
-    }
-
-    fun activateStationPremium(
-        customerUsername: String,
-        stationOwnerUsername: String,
-        pricePaid: Double,
-        paymentReference: String,
-        durationMillis: Long
-    ): Task<Long> {
-        require(pricePaid > 0.0 && pricePaid.isFinite()) { "Paid price must be valid" }
-        require(durationMillis > 0L) { "Premium duration must be valid" }
-        return db.runTransaction { transaction ->
-            val membershipRef = stationPremiumMembershipsCollection.document(
-                stationPremiumMembershipId(customerUsername, stationOwnerUsername)
-            )
-            val snapshot = transaction.get(membershipRef)
-            val membership = snapshot.toObject(StationPremiumMembership::class.java)
-            val customer = transaction.get(usersCollection.document(customerUsername))
-                .toObject(User::class.java)
-                ?: throw IllegalStateException("Customer account was not found")
-            val station = transaction.get(usersCollection.document(stationOwnerUsername))
-                .toObject(User::class.java)
-                ?: throw IllegalStateException("Water station was not found")
-            if (!station.isApprovedStationOwner()) {
-                throw IllegalStateException("Water station is not approved and active")
-            }
-            if (
-                membership?.paymentReference == paymentReference &&
-                membership.expiresAt > 0L
-            ) {
-                return@runTransaction membership.expiresAt
-            }
-            val now = System.currentTimeMillis()
-            val startsAt = maxOf(now, membership?.expiresAt ?: 0L)
-            val expiresAt = startsAt + durationMillis
-            transaction.set(
-                membershipRef,
-                StationPremiumMembership(
-                    customerUsername = customerUsername,
-                    stationOwnerUsername = stationOwnerUsername,
-                    stationName = station.name.ifBlank { station.username },
-                    pricePaid = pricePaid,
-                    purchasedAt = now,
-                    expiresAt = expiresAt,
-                    paymentReference = paymentReference
-                )
-            )
-            expiresAt
-        }
     }
 
     // --- Product Methods ---
@@ -267,6 +200,18 @@ object FirebaseHelper {
             }
     }
 
+    fun uploadGcashQr(ownerUsername: String, imageUri: Uri): Task<Void> {
+        val reference = FirebaseStorage.getInstance().reference
+            .child("gcash_qr/$ownerUsername/${UUID.randomUUID()}")
+        return reference.putFile(imageUri).continueWithTask { upload ->
+            if (!upload.isSuccessful) throw upload.exception ?: IllegalStateException("QR upload failed")
+            reference.downloadUrl
+        }.continueWithTask { download ->
+            if (!download.isSuccessful) throw download.exception ?: IllegalStateException("QR URL unavailable")
+            usersCollection.document(ownerUsername).update("gcashQrUrl", download.result.toString())
+        }
+    }
+
     fun getProductsByStation(ownerUsername: String, isAdmin: Boolean = false): Task<QuerySnapshot> {
         return if (isAdmin) {
             productsCollection.get()
@@ -277,9 +222,12 @@ object FirebaseHelper {
 
     // --- Order Methods ---
     fun addOrder(order: Order): Task<Void> {
-        val docRef = ordersCollection.document()
+        val orderId = order.id.ifBlank {
+            OrderIdGenerator.generate(order.stationName.ifBlank { order.stationOwnerUsername })
+        }
+        val docRef = ordersCollection.document(orderId)
         val now = System.currentTimeMillis()
-        order.id = docRef.id
+        order.id = orderId
         if (order.timestamp <= 0L) order.timestamp = now
         if (order.status == "Pending" && order.pendingExpiresAt <= 0L) {
             order.pendingExpiresAt = order.timestamp + PENDING_ORDER_TIMEOUT_MILLIS
@@ -345,23 +293,27 @@ object FirebaseHelper {
 
             // Create Order documents and Delete Cart items
             for (item in cartItems) {
-                val orderDoc = ordersCollection.document()
                 val currentStation = orderStations[item.stationOwnerUsername]
                     ?: throw Exception("The selected water station is unavailable")
+                val stationName = currentStation.name.ifBlank {
+                    item.stationName.ifBlank { currentStation.username }
+                }
+                val orderId = OrderIdGenerator.generate(stationName)
+                val orderDoc = ordersCollection.document(orderId)
                 val currentUnitPrice = if (item.offeringType == OFFERING_REFILL) {
                     currentStation.refillFee
                 } else {
                     item.productPrice
                 }
                 val order = Order(
-                    id = orderDoc.id,
+                    id = orderId,
                     productId = item.productId,
                     productName = item.productName,
                     imageUri = item.imageUri,
                     customerName = user.username,
                     customerAddress = user.address,
                     stationOwnerUsername = item.stationOwnerUsername,
-                    stationName = item.stationName,
+                    stationName = stationName,
                     quantity = item.quantity,
                     totalPrice = (currentUnitPrice * item.quantity) + rushFeePerItem + deliveryFeePerItem,
                     containerType = item.containerType,
@@ -508,83 +460,72 @@ object FirebaseHelper {
             .update("deliveredAt", System.currentTimeMillis())
     }
 
-    // --- Weekly Subscription Methods ---
+    // --- Automated delivery schedules ---
+    private fun validateDelivery(transaction: com.google.firebase.firestore.Transaction, delivery: WeeklySubscription) {
+        require(delivery.quantity > 0) { "Enter a positive quantity" }
+        require(delivery.repeatEveryDays in 1..3650) { "Choose 1 to 3650 days" }
+        val station = transaction.get(usersCollection.document(delivery.stationOwnerUsername)).toObject(User::class.java)
+            ?: throw IllegalStateException("Station unavailable")
+        check(station.isApprovedStationOwner()) { "Station is not approved" }
+        check(delivery.deliveryTimeSlot in station.etaSettings.customerDeliveryWindows()) { "Choose an available delivery window" }
+        if (delivery.offeringType == OFFERING_REFILL) {
+            check(station.refillServiceEnabled && station.refillFee > 0.0) { "Refill service unavailable" }
+        } else {
+            val product = transaction.get(productsCollection.document(delivery.productId)).toObject(Product::class.java)
+                ?: throw IllegalStateException("Bottle type no longer available")
+            check(product.ownerUsername == station.username) { "Choose a bottle from this station" }
+        }
+    }
+
     fun addSubscription(subscription: WeeklySubscription): Task<Void> {
-        val docRef = subscriptionsCollection.document()
-        subscription.id = docRef.id
+        val ref = subscriptionsCollection.document()
+        subscription.id = ref.id
         subscription.createdAt = System.currentTimeMillis()
-        return db.runTransaction { transaction ->
-            val membershipSnapshot = transaction.get(
-                stationPremiumMembershipsCollection.document(
-                    stationPremiumMembershipId(
-                        subscription.customerUsername,
-                        subscription.stationOwnerUsername
-                    )
-                )
-            )
-            val membership = membershipSnapshot.toObject(StationPremiumMembership::class.java)
-            if (
-                membership?.isActiveFor(
-                    subscription.customerUsername,
-                    subscription.stationOwnerUsername
-                ) != true
-            ) {
-                throw IllegalStateException(
-                    "An active BeAqua Premium membership for this station is required"
-                )
-            }
-            transaction.set(docRef, subscription)
+        return db.runTransaction<Void> { transaction ->
+            require(subscription.nextDeliveryAt > System.currentTimeMillis()) { "Choose a future delivery date" }
+            validateDelivery(transaction, subscription)
+            transaction.set(ref, subscription)
             null
         }
     }
 
-    fun getSubscriptionsForCustomer(customerUsername: String): Task<QuerySnapshot> {
-        return subscriptionsCollection
-            .whereEqualTo("customerUsername", customerUsername)
-            .get()
+    fun updateWeeklyDelivery(delivery: WeeklySubscription): Task<Void> {
+        return db.runTransaction<Void> { transaction ->
+            val ref = subscriptionsCollection.document(delivery.id)
+            val existing = transaction.get(ref).toObject(WeeklySubscription::class.java)
+                ?: throw IllegalStateException("Delivery schedule no longer exists")
+            check(existing.customerUsername == delivery.customerUsername &&
+                existing.stationOwnerUsername == delivery.stationOwnerUsername)
+            require(delivery.nextDeliveryAt > System.currentTimeMillis()) { "Choose a future delivery date" }
+            validateDelivery(transaction, delivery)
+            transaction.set(ref, delivery.copy(active = existing.active,
+                createdAt = existing.createdAt, lastOrderId = existing.lastOrderId,
+                lastOrderAt = existing.lastOrderAt, lastStatus = if (existing.active) "Scheduled" else "Paused"))
+            null
+        }
     }
+
+    fun getSubscriptionsForCustomer(customerUsername: String): Task<QuerySnapshot> =
+        subscriptionsCollection.whereEqualTo("customerUsername", customerUsername).get()
 
     fun updateSubscriptionActive(subscriptionId: String, active: Boolean): Task<Void> {
-        val subscriptionRef = subscriptionsCollection.document(subscriptionId)
-        if (!active) {
-            return subscriptionRef.update(
-                mapOf("active" to false, "lastStatus" to "Paused")
-            )
-        }
-
         return db.runTransaction<Void> { transaction ->
-            val subscription = transaction.get(subscriptionRef)
-                .toObject(WeeklySubscription::class.java)
-                ?: throw IllegalStateException("Weekly delivery was not found")
-            val membershipRef = stationPremiumMembershipsCollection.document(
-                stationPremiumMembershipId(
-                    subscription.customerUsername,
-                    subscription.stationOwnerUsername
-                )
-            )
-            val membership = transaction.get(membershipRef)
-                .toObject(StationPremiumMembership::class.java)
-            if (
-                membership?.isActiveFor(
-                    subscription.customerUsername,
-                    subscription.stationOwnerUsername
-                ) != true
-            ) {
-                throw IllegalStateException(
-                    "Renew BeAqua Premium for ${subscription.stationName} before resuming"
-                )
+            val ref = subscriptionsCollection.document(subscriptionId)
+            val delivery = transaction.get(ref).toObject(WeeklySubscription::class.java)
+                ?: throw IllegalStateException("Delivery schedule no longer exists")
+            if (active) {
+                validateDelivery(transaction, delivery)
+                delivery.nextDeliveryAt = DeliveryRecurrence.nextAfter(
+                    delivery.nextDeliveryAt, delivery.repeatEveryDays, System.currentTimeMillis())
             }
-            transaction.update(
-                subscriptionRef,
-                mapOf("active" to true, "lastStatus" to "Scheduled")
-            )
+            transaction.update(ref, mapOf("active" to active, "nextDeliveryAt" to delivery.nextDeliveryAt,
+                "lastStatus" to if (active) "Scheduled" else "Paused"))
             null
         }
     }
 
-    fun deleteSubscription(subscriptionId: String): Task<Void> {
-        return subscriptionsCollection.document(subscriptionId).delete()
-    }
+    fun deleteSubscription(subscriptionId: String): Task<Void> =
+        subscriptionsCollection.document(subscriptionId).delete()
 
     /**
      * Creates each due recurring order at most once. Product stock, current price,
@@ -629,27 +570,19 @@ object FirebaseHelper {
 
             val stationRef = usersCollection.document(subscription.stationOwnerUsername)
             val customerRef = usersCollection.document(subscription.customerUsername)
-            val membershipRef = stationPremiumMembershipsCollection.document(
-                stationPremiumMembershipId(
-                    subscription.customerUsername,
-                    subscription.stationOwnerUsername
-                )
-            )
 
             // Firestore transactions require all reads before any writes.
             val stationSnapshot = transaction.get(stationRef)
             val customerSnapshot = transaction.get(customerRef)
-            val membershipSnapshot = transaction.get(membershipRef)
             val productSnapshot = if (subscription.offeringType != OFFERING_REFILL) {
                 transaction.get(productsCollection.document(subscription.productId))
             } else {
                 null
             }
 
-            val nextDelivery = advanceToFutureWeek(subscription.nextDeliveryAt, now)
+            val nextDelivery = DeliveryRecurrence.nextAfter(subscription.nextDeliveryAt, subscription.repeatEveryDays, now)
             val station = stationSnapshot.toObject(User::class.java)
             val customer = customerSnapshot.toObject(User::class.java)
-            val membership = membershipSnapshot.toObject(StationPremiumMembership::class.java)
             val product = if (subscription.offeringType != OFFERING_REFILL) {
                 productSnapshot?.toObject(Product::class.java)
             } else {
@@ -661,7 +594,7 @@ object FirebaseHelper {
                 product == null
             }
 
-            if (offeringUnavailable || station == null || customer == null) {
+            if (offeringUnavailable || station == null || customer == null || !station.isApprovedStationOwner() || (product != null && product.ownerUsername != station.username)) {
                 transaction.update(
                     subscriptionRef,
                     mapOf(
@@ -672,24 +605,9 @@ object FirebaseHelper {
                 return@runTransaction Unit
             }
 
-            if (
-                membership?.isActiveFor(
-                    subscription.customerUsername,
-                    subscription.stationOwnerUsername,
-                    now
-                ) != true
-            ) {
-                transaction.update(
-                    subscriptionRef,
-                    mapOf(
-                        "active" to false,
-                        "lastStatus" to "BeAqua Premium for this station expired"
-                    )
-                )
-                return@runTransaction Unit
-            }
-
-            val orderRef = ordersCollection.document()
+            val stationName = station.name.ifBlank { station.username }
+            val orderId = OrderIdGenerator.generate(stationName)
+            val orderRef = ordersCollection.document(orderId)
             val deliveryFee = station.deliveryFee
             val offeringId = if (subscription.offeringType == OFFERING_REFILL) {
                 subscription.productId.ifBlank { "REFILL_${station.username}" }
@@ -707,14 +625,14 @@ object FirebaseHelper {
                 product?.price ?: 0.0
             }
             val order = Order(
-                id = orderRef.id,
+                id = orderId,
                 productId = offeringId,
                 productName = offeringName,
                 imageUri = product?.imageUri,
                 customerName = customer.username,
                 customerAddress = customer.address,
                 stationOwnerUsername = station.username,
-                stationName = station.name,
+                stationName = stationName,
                 quantity = subscription.quantity,
                 totalPrice = (offeringPrice * subscription.quantity) + deliveryFee,
                 containerType = subscription.containerType,
@@ -748,22 +666,13 @@ object FirebaseHelper {
                 subscriptionRef,
                 mapOf(
                     "nextDeliveryAt" to nextDelivery,
-                    "lastOrderId" to orderRef.id,
+                    "lastOrderId" to orderId,
                     "lastOrderAt" to now,
                     "lastStatus" to "Order created"
                 )
             )
             Unit
         }
-    }
-
-    private fun advanceToFutureWeek(timestamp: Long, now: Long): Long {
-        val weekMillis = 7L * 24L * 60L * 60L * 1000L
-        var next = timestamp + weekMillis
-        while (next <= now) {
-            next += weekMillis
-        }
-        return next
     }
 
     fun markOrderAsRated(orderId: String): Task<Void> {

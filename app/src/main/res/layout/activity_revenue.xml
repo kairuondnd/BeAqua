@@ -210,7 +210,33 @@
                 </com.google.android.material.card.MaterialCardView>
 
                 <!-- Filter -->
+                <RadioGroup
+                    android:id="@+id/revenuePeriodOptions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:checkedButton="@id/revenueWeekOption">
+                    <RadioButton
+                        android:id="@+id/revenueWeekOption"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="48dp"
+                        android:text="Week" />
+                    <RadioButton
+                        android:id="@+id/revenueMonthOption"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="48dp"
+                        android:text="Month" />
+                </RadioGroup>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRevenueWeekDate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Choose a date in the week"
+                    android:textAllCaps="false" />
                 <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/revenueMonthFilters"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="24dp"

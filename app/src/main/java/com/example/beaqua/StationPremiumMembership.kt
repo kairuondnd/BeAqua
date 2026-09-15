@@ -10,7 +10,13 @@ data class StationPremiumMembership(
     var pricePaid: Double = 0.0,
     var purchasedAt: Long = 0L,
     var expiresAt: Long = 0L,
-    var paymentReference: String = ""
+    var paymentReference: String = "",
+    var pendingPaymentReference: String = "",
+    var pendingPrice: Double = 0.0,
+    var paymentStatus: String = "",
+    var paymentRequestedAt: Long = 0L,
+    var cancelAtPeriodEnd: Boolean = false,
+    var cancellationRequestedAt: Long = 0L
 ) {
     fun isActiveFor(
         customer: String,

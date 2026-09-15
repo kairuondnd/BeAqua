@@ -36,7 +36,7 @@ class StationOwnerHistoryAdapter(
             nameText = "[REFILL] $nameText"
         }
         if (order.isSubscriptionOrder) {
-            nameText = "[WEEKLY] $nameText"
+            nameText = "[AUTOMATED] $nameText"
         }
         if (order.isRushOrder) {
             nameText = "[RUSH] $nameText"

@@ -53,7 +53,7 @@ class UserHistoryAdapter(
         
         val servicePrefix = if (order.isRefill()) "REFILL • " else ""
         holder.tvProductName.text =
-            if (order.isSubscriptionOrder) "WEEKLY • $servicePrefix${order.productName}"
+            if (order.isSubscriptionOrder) "AUTOMATED • $servicePrefix${order.productName}"
             else "$servicePrefix${order.productName}"
         holder.tvStationOwner.text = order.stationName.ifEmpty { "Station: ${order.stationOwnerUsername}" }
         holder.tvQuantity.text = if (order.isRefill()) {

@@ -32,6 +32,8 @@ class RevenueActivity : AppCompatActivity() {
     private lateinit var btnViewHotspotsMap: MaterialButton
 
     private val allOrders = mutableListOf<Order>()
+    private var weekly = true
+    private val selectedWeekDate = Calendar.getInstance()
     private val months = arrayOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
     private val years = mutableListOf<String>()
 
@@ -68,6 +70,23 @@ class RevenueActivity : AppCompatActivity() {
         }
 
         setupSpinners()
+        weekly = savedInstanceState?.getBoolean("revenueWeekly", true) ?: true
+        selectedWeekDate.timeInMillis = savedInstanceState?.getLong("revenueWeekDate")
+            ?: System.currentTimeMillis()
+        val periodOptions = findViewById<android.widget.RadioGroup>(R.id.revenuePeriodOptions)
+        periodOptions.check(if (weekly) R.id.revenueWeekOption else R.id.revenueMonthOption)
+        periodOptions.setOnCheckedChangeListener { _, checked ->
+            weekly = checked == R.id.revenueWeekOption
+            calculateFilteredRevenue()
+        }
+        findViewById<MaterialButton>(R.id.btnRevenueWeekDate).setOnClickListener {
+            android.app.DatePickerDialog(this, { _, year, month, day ->
+                selectedWeekDate.set(year, month, day)
+                calculateFilteredRevenue()
+            }, selectedWeekDate.get(Calendar.YEAR), selectedWeekDate.get(Calendar.MONTH),
+                selectedWeekDate.get(Calendar.DAY_OF_MONTH)).show()
+        }
+        calculateFilteredRevenue()
         loadOrders()
     }
 
@@ -169,24 +188,52 @@ class RevenueActivity : AppCompatActivity() {
         tvThisMonth.text = String.format(Locale.getDefault(), "₱%.2f", thisMonth)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("revenueWeekly", weekly)
+        outState.putLong("revenueWeekDate", selectedWeekDate.timeInMillis)
+        super.onSaveInstanceState(outState)
+    }
+
     private fun calculateFilteredRevenue() {
         val selectedMonthIndex = spinnerMonth.selectedItemPosition
-        val selectedYear = spinnerYear.selectedItem.toString().toInt()
+        val selectedYear = spinnerYear.selectedItem?.toString()?.toIntOrNull() ?: return
+        if (selectedMonthIndex !in months.indices) return
+        findViewById<View>(R.id.revenueMonthFilters).visibility = if (weekly) View.GONE else View.VISIBLE
+        val weekButton = findViewById<MaterialButton>(R.id.btnRevenueWeekDate)
+        weekButton.visibility = if (weekly) View.VISIBLE else View.GONE
+        val start = (selectedWeekDate.clone() as Calendar).apply {
+            if (weekly) {
+                add(Calendar.DAY_OF_MONTH, -((get(Calendar.DAY_OF_WEEK) + 5) % 7))
+            } else {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.YEAR, selectedYear)
+                set(Calendar.MONTH, selectedMonthIndex)
+            }
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val end = (start.clone() as Calendar).apply {
+            if (weekly) add(Calendar.DAY_OF_MONTH, 7) else add(Calendar.MONTH, 1)
+        }
 
         var filteredRevenue = 0.0
         var orderCount = 0
 
         for (order in allOrders) {
-            val orderCal = Calendar.getInstance()
-            orderCal.timeInMillis = order.timestamp
-
-            if (orderCal.get(Calendar.MONTH) == selectedMonthIndex && orderCal.get(Calendar.YEAR) == selectedYear) {
+            if (order.timestamp >= start.timeInMillis && order.timestamp < end.timeInMillis) {
                 filteredRevenue += order.totalPrice
                 orderCount++
             }
         }
 
-        tvSelectedMonthYear.text = "${months[selectedMonthIndex]} $selectedYear"
+        val format = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+        val lastDay = (end.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -1) }
+        tvSelectedMonthYear.text = if (weekly) {
+            "Weekly sales: ${format.format(start.time)} – ${format.format(lastDay.time)}"
+        } else "Monthly sales: ${months[selectedMonthIndex]} $selectedYear"
+        weekButton.text = "Week of ${format.format(start.time)} — change date"
         tvSelectedRevenue.text = String.format(Locale.getDefault(), "₱%.2f", filteredRevenue)
         tvSelectedOrderCount.text = "$orderCount Successful Orders"
     }

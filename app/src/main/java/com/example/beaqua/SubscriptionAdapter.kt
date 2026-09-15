@@ -14,7 +14,8 @@ import java.util.Locale
 class SubscriptionAdapter(
     private val subscriptions: List<WeeklySubscription>,
     private val onActiveChanged: (WeeklySubscription, Boolean) -> Unit,
-    private val onCancel: (WeeklySubscription) -> Unit
+    private val onCancel: (WeeklySubscription) -> Unit,
+    private val onEdit: (WeeklySubscription) -> Unit
 ) : RecyclerView.Adapter<SubscriptionAdapter.SubscriptionViewHolder>() {
 
     class SubscriptionViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -45,7 +46,7 @@ class SubscriptionAdapter(
         }
         holder.station.text = subscription.stationName
         holder.schedule.text =
-            "Every ${subscription.deliveryDay} • Delivery window: ${subscription.deliveryTimeSlot}"
+            "Every ${subscription.repeatEveryDays} day(s) • Delivery window: ${subscription.deliveryTimeSlot}"
         holder.details.text = if (subscription.offeringType == OFFERING_REFILL) {
             "${subscription.emptyContainerCount.coerceAtLeast(subscription.quantity)} empty containers • Next: $nextDate"
         } else {
@@ -59,6 +60,8 @@ class SubscriptionAdapter(
             onActiveChanged(subscription, checked)
         }
         holder.cancel.setOnClickListener { onCancel(subscription) }
+        holder.itemView.findViewById<MaterialButton>(R.id.btnEditWeeklyDelivery)
+            .setOnClickListener { onEdit(subscription) }
     }
 
     override fun getItemCount(): Int = subscriptions.size

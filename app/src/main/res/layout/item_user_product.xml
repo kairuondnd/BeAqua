@@ -111,7 +111,7 @@
             android:layout_width="match_parent"
             android:layout_height="56dp"
             android:layout_marginTop="8dp"
-            android:text="BeAqua Premium weekly delivery"
+            android:text="Schedule automated delivery"
             android:textAllCaps="false"
             android:textColor="@color/primary"
             android:textStyle="bold"

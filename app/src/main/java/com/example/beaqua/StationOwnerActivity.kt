@@ -50,6 +50,28 @@ class StationOwnerActivity : AppCompatActivity() {
     private var btnAdd: MaterialButton? = null
     
     private var currentUserData: User? = null
+    private var gcashUploadButton: MaterialButton? = null
+    private var gcashPreview: ImageView? = null
+    private val gcashPicker = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val type = contentResolver.getType(uri)
+            if (type?.startsWith("image/") != true) {
+                Toast.makeText(this, "Choose a QR code image", Toast.LENGTH_SHORT).show()
+            } else {
+                gcashUploadButton?.isEnabled = false
+                FirebaseHelper.uploadGcashQr(currentUsername, uri).addOnSuccessListener {
+                    gcashUploadButton?.isEnabled = true
+                    gcashPreview?.setImageURI(uri)
+                    Toast.makeText(this, "GCash QR saved. Customers can now use it at checkout.", Toast.LENGTH_LONG).show()
+                }.addOnFailureListener {
+                    gcashUploadButton?.isEnabled = true
+                    Toast.makeText(this, "QR upload failed: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
     private var selectedGraphRange = GraphRange.WEEK
 
     private enum class GraphRange {
@@ -874,8 +896,30 @@ class StationOwnerActivity : AppCompatActivity() {
         val etDeliveryFee = etaView.findViewById<EditText>(R.id.etDeliveryFee)
         val switchRush = etaView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchRushOrder)
         val etRushFee = etaView.findViewById<EditText>(R.id.etRushOrderFee)
-        val etPremiumPrice = etaView.findViewById<EditText>(R.id.etPremiumPrice)
         val btnSaveRush = etaView.findViewById<MaterialButton>(R.id.btnSaveRushSettings)
+        val paymentSettings = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+        }
+        paymentSettings.addView(TextView(this).apply {
+            text = "GCash payment QR\nUpload your station's GCash receiving QR. Customers will see this at checkout."
+        })
+        gcashPreview = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, (220 * resources.displayMetrics.density).toInt())
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Station GCash QR code"
+            setBackgroundColor(android.graphics.Color.WHITE)
+        }
+        paymentSettings.addView(gcashPreview)
+        gcashUploadButton = MaterialButton(this).apply {
+            text = "Upload / Replace GCash QR"
+            setOnClickListener { gcashPicker.launch("image/*") }
+        }
+        paymentSettings.addView(gcashUploadButton)
+        (btnSaveRush.parent as android.view.ViewGroup).addView(paymentSettings)
+        FirebaseHelper.getUser(currentUsername).addOnSuccessListener { snapshot ->
+            gcashPreview?.let { ContainerImageLoader.load(it, snapshot.toObject(User::class.java)?.gcashQrUrl) }
+        }
 
         val etOperatingOpen = etaView.findViewById<EditText>(R.id.etOperatingOpenTime)
         val etOperatingClose = etaView.findViewById<EditText>(R.id.etOperatingCloseTime)
@@ -915,7 +959,6 @@ class StationOwnerActivity : AppCompatActivity() {
             etDeliveryFee.setText(String.format(Locale.getDefault(), "%.2f", user.deliveryFee))
             switchRush.isChecked = user.rushOrderEnabled
             etRushFee.setText(String.format(Locale.getDefault(), "%.2f", user.rushOrderFee))
-            etPremiumPrice.setText(String.format(Locale.getDefault(), "%.2f", user.premiumPrice))
             etOperatingOpen.setText(user.operatingHours.openTime)
             etOperatingClose.setText(user.operatingHours.closeTime)
             when (user.operatingHours.statusOverride.uppercase(Locale.US)) {
@@ -1067,7 +1110,6 @@ class StationOwnerActivity : AppCompatActivity() {
             val isEnabled = switchRush.isChecked
             val rushFee = etRushFee.text.toString().toDoubleOrNull() ?: 0.0
             val deliveryFee = etDeliveryFee.text.toString().toDoubleOrNull() ?: 0.0
-            val premiumPrice = etPremiumPrice.text.toString().toDoubleOrNull()
 
             if (rushFee < 0.0) {
                 etRushFee.error = "Rush fee cannot be negative"
@@ -1077,31 +1119,25 @@ class StationOwnerActivity : AppCompatActivity() {
                 etDeliveryFee.error = "Delivery fee cannot be negative"
                 return@setOnClickListener
             }
-            if (premiumPrice == null || premiumPrice <= 0.0) {
-                etPremiumPrice.error = "Enter a Premium price greater than zero"
-                return@setOnClickListener
-            }
              
             currentUserData?.let { user ->
                 val updatedUser = user.copy(
                     rushOrderEnabled = isEnabled, 
                     rushOrderFee = rushFee,
-                    deliveryFee = deliveryFee,
-                    premiumPrice = premiumPrice
+                    deliveryFee = deliveryFee
                 )
                 btnSaveRush.isEnabled = false
                 FirebaseHelper.updateStationPricing(
                     currentUsername,
                     isEnabled,
                     rushFee,
-                    deliveryFee,
-                    premiumPrice
+                    deliveryFee
                 ).addOnSuccessListener {
                     currentUserData = updatedUser
                     btnSaveRush.isEnabled = true
                     Toast.makeText(
                         this,
-                        "Delivery, Priority, and Premium pricing updated!",
+                        "Delivery and Priority pricing updated!",
                         Toast.LENGTH_SHORT
                     ).show()
                 }.addOnFailureListener { error ->
@@ -1202,7 +1238,7 @@ class StationOwnerActivity : AppCompatActivity() {
             }
         }
         if (order.isSubscriptionOrder) {
-            infoText = "[WEEKLY DELIVERY] $infoText"
+            infoText = "[AUTOMATED DELIVERY] $infoText"
         }
         if (order.isRushOrder) {
             infoText = "[RUSH] $infoText\nRush Fee: ₱${String.format(Locale.getDefault(), "%.2f", order.rushOrderFee)}"
@@ -1215,6 +1251,18 @@ class StationOwnerActivity : AppCompatActivity() {
         orderView.findViewById<TextView>(R.id.tvPaymentMethod).text = "Payment: ${order.paymentMethod}${if(order.isPaid) " (PAID)" else ""}"
 
         orderView.findViewById<Button>(R.id.btnAccept).setOnClickListener { 
+            if (order.paymentMethod == "GCash" && !order.isPaid) {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Verify GCash payment")
+                    .setMessage("Check your GCash account for this customer's payment of ₱${order.totalPrice} before accepting order ${order.id}.")
+                    .setPositiveButton("Payment received") { _, _ ->
+                        FirebaseHelper.updateOrderStatus(order.id, "Accepted", isPaid = true)
+                            .addOnSuccessListener { refreshOrders() }
+                            .addOnFailureListener { Toast.makeText(this, "Could not confirm payment", Toast.LENGTH_LONG).show() }
+                    }
+                    .setNegativeButton("Not yet", null).show()
+                return@setOnClickListener
+            }
             FirebaseHelper.updateOrderStatus(order.id, "Accepted").addOnSuccessListener {
                 refreshOrders()
             }
@@ -1255,7 +1303,7 @@ class StationOwnerActivity : AppCompatActivity() {
                 if (order.refillInstructions.isBlank()) "" else "\nNotes: ${order.refillInstructions}"
         }
         if (order.isSubscriptionOrder) {
-            info = "[WEEKLY DELIVERY] $info"
+            info = "[AUTOMATED DELIVERY] $info"
         }
         if (order.isRushOrder) {
             info = "[RUSH] $info"

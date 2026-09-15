@@ -28,7 +28,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:layout_weight="1"
-            android:text="Weekly Deliveries"
+            android:text="Automated Deliveries"
             android:textColor="@color/text_primary"
             android:textSize="22sp"
             android:textStyle="bold" />
@@ -61,7 +61,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="A BeAqua Premium benefit. Active plans automatically place a Cash on Delivery order every week."
+                android:text="Choose your bottles, quantity, and how many days between deliveries. Each delivery is paid by Cash on Delivery."
                 android:textColor="#E6FFFFFF"
                 android:textSize="14sp" />
         </LinearLayout>
@@ -95,7 +95,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="No weekly deliveries yet"
+            android:text="No automated deliveries yet"
             android:textColor="@color/text_primary"
             android:textSize="18sp"
             android:textStyle="bold" />
@@ -105,7 +105,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="Open a water station and choose “Subscribe for weekly delivery” on a product."
+            android:text="Open a water station and choose Automated deliveries to create a schedule."
             android:textColor="@color/text_secondary"
             android:textSize="14sp" />
 

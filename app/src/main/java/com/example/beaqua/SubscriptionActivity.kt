@@ -43,6 +43,9 @@ class SubscriptionActivity : AppCompatActivity() {
                 subscriptions.clear()
                 subscriptions.addAll(
                     result.toObjects(WeeklySubscription::class.java)
+                        .filter { intent.getStringExtra("STATION_USERNAME").let { station ->
+                            station.isNullOrBlank() || it.stationOwnerUsername == station
+                        } }
                         .sortedWith(
                             compareByDescending<WeeklySubscription> { it.active }
                                 .thenBy { it.nextDeliveryAt }
@@ -53,13 +56,29 @@ class SubscriptionActivity : AppCompatActivity() {
                     onActiveChanged = { subscription, active ->
                         setSubscriptionActive(subscription, active)
                     },
-                    onCancel = { subscription -> confirmCancel(subscription) }
+                    onCancel = { subscription -> confirmCancel(subscription) },
+                    onEdit = { subscription -> editDelivery(subscription) }
                 )
                 updateEmptyState()
             }
             .addOnFailureListener {
-                Toast.makeText(this, "Unable to load weekly deliveries", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Unable to load automated deliveries", Toast.LENGTH_SHORT).show()
             }
+    }
+
+    private fun editDelivery(subscription: WeeklySubscription) {
+        FirebaseHelper.getUser(username).addOnSuccessListener { customerSnapshot ->
+            val customer = customerSnapshot.toObject(User::class.java) ?: return@addOnSuccessListener
+            FirebaseHelper.getUser(subscription.stationOwnerUsername).addOnSuccessListener { stationSnapshot ->
+                val station = stationSnapshot.toObject(User::class.java) ?: return@addOnSuccessListener
+                RecurringDeliveryEditor.show(this, customer, station, existing = subscription,
+                    onSaved = { loadSubscriptions() })
+            }.addOnFailureListener {
+                Toast.makeText(this, "Could not load station", Toast.LENGTH_LONG).show()
+            }
+        }.addOnFailureListener {
+            Toast.makeText(this, "Could not load customer", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun setSubscriptionActive(subscription: WeeklySubscription, active: Boolean) {
@@ -81,9 +100,9 @@ class SubscriptionActivity : AppCompatActivity() {
 
     private fun confirmCancel(subscription: WeeklySubscription) {
         AlertDialog.Builder(this)
-            .setTitle("Cancel weekly delivery?")
+            .setTitle("Cancel automated delivery?")
             .setMessage("${subscription.productName} will no longer be ordered automatically.")
-            .setPositiveButton("Cancel subscription") { _, _ ->
+            .setPositiveButton("Remove delivery") { _, _ ->
                 FirebaseHelper.deleteSubscription(subscription.id)
                     .addOnSuccessListener {
                         val index = subscriptions.indexOf(subscription)

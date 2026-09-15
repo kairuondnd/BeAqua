@@ -47,14 +47,14 @@ class ProductAdapter(
             holder.btnEdit?.visibility = View.GONE
             holder.btnDelete?.visibility = View.GONE
             holder.btnOrder?.visibility = View.VISIBLE
-            holder.btnSubscribe?.visibility = View.VISIBLE
+            holder.btnSubscribe?.visibility = View.GONE
             if (isRefillView) {
                 holder.tvName.text = "Water Refill"
                 holder.tvPrice.text = "₱${String.format("%.2f", product.price)} per container"
                 holder.etQuantity?.hint = "Containers"
                 holder.btnOrder?.let { (it as? TextView)?.text = "Add Refill to Cart" }
                 holder.btnSubscribe?.let {
-                    (it as? TextView)?.text = "BeAqua Premium weekly refill"
+                    (it as? TextView)?.text = "Schedule recurring refill"
                 }
                 holder.itemView.findViewById<TextView?>(R.id.tvQuantityLabel)?.text =
                     "Number of empty containers"

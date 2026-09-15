@@ -5,6 +5,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StationPremiumMembershipTest {
+    @Test
+    fun cancellationMidPeriodKeepsAccessUntilExactExpiry() {
+        val day = 24L * 60L * 60L * 1000L
+        val membership = StationPremiumMembership(
+            customerUsername = "customer1",
+            stationOwnerUsername = "stationA",
+            purchasedAt = day,
+            expiresAt = 32 * day,
+            cancelAtPeriodEnd = true,
+            cancellationRequestedAt = 15 * day
+        )
+        assertTrue(membership.isActiveFor("customer1", "stationA", now = 15 * day))
+        assertTrue(membership.isActiveFor("customer1", "stationA", now = 32 * day - 1))
+        assertFalse(membership.isActiveFor("customer1", "stationA", now = 32 * day))
+        assertFalse(membership.isActiveFor("customer1", "stationB", now = 15 * day))
+    }
 
     @Test
     fun activeMembershipOnlyAppliesToPurchasedStation() {

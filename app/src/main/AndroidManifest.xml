@@ -35,33 +35,11 @@
 
         <activity
             android:name=".CartActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="gcash-callback"
-                    android:scheme="beaqua" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:launchMode="singleTop" />
         <activity
             android:name=".SubscriptionActivity"
             android:exported="false" />
-        <activity
-            android:name=".PremiumActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="premium-callback"
-                    android:scheme="beaqua" />
-            </intent-filter>
-        </activity>
         <activity
             android:name=".HotspotsMapActivity"
             android:exported="false" />

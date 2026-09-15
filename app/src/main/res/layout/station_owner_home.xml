@@ -1147,28 +1147,16 @@
                             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchRushOrder" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Enable Rush" />
                             <EditText android:id="@+id/etRushOrderFee" android:layout_width="match_parent" android:layout_height="48dp" android:hint="Rush Fee" android:inputType="numberDecimal" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="18dp"
-                                android:text="BeAqua Premium price (30 days)"
-                                android:textColor="@color/text_primary"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
 
-                            <EditText
-                                android:id="@+id/etPremiumPrice"
-                                android:layout_width="match_parent"
-                                android:layout_height="48dp"
-                                android:hint="Premium Price"
-                                android:inputType="numberDecimal" />
+
+
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnSaveRushSettings"
                                 android:layout_width="match_parent"
                                 android:layout_height="56dp"
                                 android:layout_marginTop="16dp"
-                                android:text="Save Fees and Premium Price"
+                                android:text="Save Fees"
                                 app:cornerRadius="16dp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
