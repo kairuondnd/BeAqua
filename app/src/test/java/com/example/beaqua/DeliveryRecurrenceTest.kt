@@ -33,4 +33,28 @@ class DeliveryRecurrenceTest {
     @Test fun existingSchedulesDefaultToSevenDays() {
         assertEquals(7, WeeklySubscription().repeatEveryDays)
     }
+
+    @Test fun legacySingleItemScheduleIsReadAsOneDeliveryItem() {
+        val delivery = WeeklySubscription(
+            productId = "bottle-1",
+            productName = "Water 1",
+            quantity = 3,
+            containerType = "Water 1"
+        )
+
+        assertEquals(listOf(RecurringDeliveryItem("bottle-1", "Water 1", 3, "Water 1")), delivery.deliveryItems())
+    }
+
+    @Test fun multiItemScheduleUsesSavedItemQuantities() {
+        val delivery = WeeklySubscription(
+            productId = "legacy",
+            quantity = 99,
+            items = listOf(
+                RecurringDeliveryItem("a", "Small", 2, "Small"),
+                RecurringDeliveryItem("b", "Large", 4, "Large")
+            )
+        )
+
+        assertEquals(listOf(2, 4), delivery.deliveryItems().map { it.quantity })
+    }
 }

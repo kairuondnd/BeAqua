@@ -1,126 +1,345 @@
 package com.example.beaqua
 
-import android.app.DatePickerDialog
 import android.content.Context
 import android.text.InputType
-import android.widget.*
+import android.view.View
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.doAfterTextChanged
+import com.google.android.material.button.MaterialButton
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 object RecurringDeliveryEditor {
-    fun show(context: Context, customer: User, station: User, existing: WeeklySubscription? = null,
-             preferredProductId: String = "", initialQuantity: Int = 1, onSaved: () -> Unit) {
+    private data class ItemControl(
+        val product: Product,
+        val selected: CheckBox,
+        val quantity: EditText
+    )
+
+    fun show(
+        context: Context,
+        customer: User,
+        station: User,
+        existing: WeeklySubscription? = null,
+        preferredProductId: String = "",
+        initialQuantity: Int = 1,
+        checkoutItem: CartItem? = null,
+        inlineContainer: LinearLayout? = null,
+        onSavingChanged: (Boolean) -> Unit = {},
+        onCancelled: () -> Unit = {},
+        onSaved: () -> Unit
+    ) {
         if (customer.address.isBlank()) {
             Toast.makeText(context, "Add your delivery address in Profile first", Toast.LENGTH_LONG).show()
+            onCancelled()
             return
         }
+        if (checkoutItem?.offeringType == OFFERING_REFILL) {
+            Toast.makeText(
+                context,
+                "Recurring delivery is available for station sale items only",
+                Toast.LENGTH_LONG
+            ).show()
+            onCancelled()
+            return
+        }
+
+        val hours = station.operatingHours
+        val stationTimeZone = TimeZone.getTimeZone(hours.timeZoneId)
+        val dateFormat = SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).apply {
+            timeZone = stationTimeZone
+        }
+        fun cutoffLabel(timestamp: Long) =
+            SimpleDateFormat("MMM d, yyyy h:mm a z", Locale.getDefault()).apply {
+                timeZone = stationTimeZone
+            }.format(Date(DeliveryFinalization.cutoff(timestamp, hours)))
+
+        if (
+            existing != null &&
+            !DeliveryFinalization.canEdit(existing.nextDeliveryAt, hours, System.currentTimeMillis())
+        ) {
+            AlertDialog.Builder(context)
+                .setTitle("Delivery finalized")
+                .setMessage(
+                    "Editing closed at ${cutoffLabel(existing.nextDeliveryAt)}, when ${station.name} opens. " +
+                        "Refresh to manage your next delivery."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
         FirebaseHelper.getProductsByStation(station.username).addOnSuccessListener { result ->
-            val products = result.toObjects(Product::class.java).toMutableList()
-            val refillId = "REFILL_${station.username}"
-            if (station.refillServiceEnabled && station.refillFee > 0.0) {
-                products.add(Product(id = refillId, name = "Water refill (your containers)",
-                    price = station.refillFee, ownerUsername = station.username))
-            }
+            val products = result.toObjects(Product::class.java)
+                .filter { it.ownerUsername == station.username }
+                .sortedBy { it.name.lowercase(Locale.getDefault()) }
+
             if (products.isEmpty() || !station.isApprovedStationOwner()) {
-                Toast.makeText(context, "No delivery options are available at this station", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    "This station has no sale items available for recurring delivery",
+                    Toast.LENGTH_LONG
+                ).show()
+                onCancelled()
                 return@addOnSuccessListener
             }
+
+            val savedItems = existing?.deliveryItems().orEmpty().associateBy { it.productId }
+            val preferredId = checkoutItem?.productId
+                ?: preferredProductId.takeIf { it.isNotBlank() }
+                ?: existing?.productId
+            val defaultProductId = preferredId
+                ?.takeIf { candidate -> products.any { it.id == candidate } }
+                ?: products.first().id
+
             val layout = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 val pad = (20 * resources.displayMetrics.density).toInt()
                 setPadding(pad, pad, pad, pad)
             }
-            fun label(text: String) { layout.addView(TextView(context).apply { this.text = text }) }
-            label("${station.name}\nNo subscription fee. Each delivery is paid by Cash on Delivery at current station prices.\n")
-            label("Bottle type / service")
-            val offering = Spinner(context).apply {
-                adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item,
-                    products.map { "${it.name} — ₱${it.price}" })
-                setSelection(products.indexOfFirst { it.id == (existing?.productId ?: preferredProductId) }.coerceAtLeast(0))
+            fun label(value: String) {
+                layout.addView(TextView(context).apply { text = value })
             }
-            layout.addView(offering)
-            label("Number of bottles / containers")
-            val quantity = EditText(context).apply {
-                inputType = InputType.TYPE_CLASS_NUMBER
-                setText((existing?.quantity ?: initialQuantity).toString())
+
+            label(
+                "${station.name}\nChoose one or more items sold by this station and set a quantity for each. " +
+                    "Each order uses Cash on Delivery " +
+                    "at the station's current item price and delivery fee.\n"
+            )
+            label("Available items")
+            val itemControls = products.map { product ->
+                val savedItem = savedItems[product.id]
+                val checked = if (existing != null && savedItems.isNotEmpty()) {
+                    savedItem != null
+                } else {
+                    product.id == defaultProductId
+                }
+                val itemCheck = CheckBox(context).apply {
+                    text = "${product.name} — ₱${String.format(Locale.getDefault(), "%.2f", product.price)}"
+                    isChecked = checked
+                }
+                val itemQuantity = EditText(context).apply {
+                    inputType = InputType.TYPE_CLASS_NUMBER
+                    hint = "Quantity"
+                    setText(
+                        when {
+                            savedItem != null -> savedItem.quantity
+                            checkoutItem?.productId == product.id -> checkoutItem.quantity
+                            product.id == defaultProductId -> initialQuantity
+                            else -> 1
+                        }.toString()
+                    )
+                    visibility = if (checked) View.VISIBLE else View.GONE
+                }
+                itemCheck.setOnCheckedChangeListener { _, isChecked ->
+                    itemQuantity.visibility = if (isChecked) View.VISIBLE else View.GONE
+                    if (isChecked) itemQuantity.requestFocus()
+                }
+                layout.addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(itemCheck)
+                    addView(itemQuantity)
+                })
+                ItemControl(product, itemCheck, itemQuantity)
             }
-            layout.addView(quantity)
+
             label("Repeat every (days)")
             val interval = EditText(context).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER
                 setText((existing?.repeatEveryDays ?: 7).toString())
             }
             layout.addView(interval)
-            val date = Calendar.getInstance().apply {
-                if (existing != null && existing.nextDeliveryAt > System.currentTimeMillis()) {
-                    timeInMillis = existing.nextDeliveryAt
-                } else {
-                    add(Calendar.DAY_OF_YEAR, 1)
-                    set(Calendar.HOUR_OF_DAY, 6); set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                }
+
+            val formOpenedAt = System.currentTimeMillis()
+            val nextDelivery = Calendar.getInstance(stationTimeZone).apply {
+                timeInMillis = existing?.nextDeliveryAt
+                    ?: DeliveryFinalization.firstDeliveryAfter(formOpenedAt, 7, hours)
             }
-            val dateButton = Button(context)
-            fun renderDate() { dateButton.text = "Next delivery: " + SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(date.time) }
+            val nextDate = Button(context).apply { isEnabled = false }
+            val cutoffText = TextView(context)
+            fun renderDate() {
+                nextDate.text = "Next delivery: ${dateFormat.format(nextDelivery.time)}"
+                cutoffText.text =
+                    "The next delivery is calculated automatically from the repeat interval. " +
+                    "Finalize changes by ${cutoffLabel(nextDelivery.timeInMillis)}, when the station opens. " +
+                    "We will remind you the day before."
+            }
             renderDate()
-            dateButton.setOnClickListener {
-                DatePickerDialog(context, { _, year, month, day ->
-                    date.set(year, month, day, 6, 0, 0)
-                    date.set(Calendar.MILLISECOND, 0)
+            interval.doAfterTextChanged { editable ->
+                val days = editable.toString().toIntOrNull()
+                if (days != null && days in 1..3650) {
+                    nextDelivery.timeInMillis = if (
+                        existing != null && days == existing.repeatEveryDays
+                    ) {
+                        existing.nextDeliveryAt
+                    } else {
+                        DeliveryFinalization.firstDeliveryAfter(formOpenedAt, days, hours)
+                    }
                     renderDate()
-                }, date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DAY_OF_MONTH)).show()
-            }
-            layout.addView(dateButton)
-            label("Preferred delivery window")
-            val windows = station.etaSettings.customerDeliveryWindows()
-            val window = Spinner(context).apply {
-                adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, windows)
-                setSelection(windows.indexOf(existing?.deliveryTimeSlot).coerceAtLeast(0))
-            }
-            layout.addView(window)
-            label("Refill instructions (optional; used for refills)")
-            val notes = EditText(context).apply { setText(existing?.refillInstructions.orEmpty()) }
-            layout.addView(notes)
-            val dialog = AlertDialog.Builder(context).setTitle("Customize automated delivery")
-                .setView(ScrollView(context).apply { addView(layout) })
-                .setPositiveButton("Save schedule", null).setNegativeButton("Cancel", null).create()
-            dialog.setOnShowListener {
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                    val count = quantity.text.toString().toIntOrNull() ?: 0
-                    val days = interval.text.toString().toIntOrNull() ?: 0
-                    if (count <= 0) { quantity.error = "Enter a positive quantity"; return@setOnClickListener }
-                    if (days !in 1..3650) { interval.error = "Enter 1 to 3650 days"; return@setOnClickListener }
-                    if (date.timeInMillis <= System.currentTimeMillis()) {
-                        Toast.makeText(context, "Choose a future delivery date", Toast.LENGTH_LONG).show()
-                        return@setOnClickListener
-                    }
-                    val selectedWindow = windows.getOrNull(window.selectedItemPosition) ?: return@setOnClickListener
-                    val product = products[offering.selectedItemPosition]
-                    val refill = product.id == refillId
-                    val delivery = (existing ?: WeeklySubscription()).copy(
-                        customerUsername = customer.username, stationOwnerUsername = station.username,
-                        stationName = station.name, productId = product.id, productName = product.name,
-                        containerType = if (refill) "Customer-owned container" else product.name,
-                        quantity = count, repeatEveryDays = days, nextDeliveryAt = date.timeInMillis,
-                        deliveryDay = "", deliveryTimeSlot = selectedWindow,
-                        offeringType = if (refill) OFFERING_REFILL else OFFERING_PURCHASE,
-                        refillServiceId = if (refill) station.username else "",
-                        refillInstructions = if (refill) notes.text.toString().trim() else "",
-                        emptyContainerCount = if (refill) count else 0)
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
-                    val task = if (existing == null) FirebaseHelper.addSubscription(delivery)
-                        else FirebaseHelper.updateWeeklyDelivery(delivery)
-                    task.addOnSuccessListener { dialog.dismiss(); onSaved() }.addOnFailureListener {
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                        Toast.makeText(context, it.message ?: "Could not save schedule", Toast.LENGTH_LONG).show()
-                    }
                 }
             }
-            dialog.show()
+            layout.addView(nextDate)
+            layout.addView(cutoffText)
+
+            if (inlineContainer != null && !inlineContainer.isAttachedToWindow) {
+                return@addOnSuccessListener
+            }
+            val dialog = if (inlineContainer == null) {
+                AlertDialog.Builder(context)
+                    .setTitle("Recurring delivery")
+                    .setView(ScrollView(context).apply { addView(layout) })
+                    .setPositiveButton(if (existing == null) "Save recurring delivery" else "Save changes", null)
+                    .setNegativeButton("Cancel") { _, _ -> onCancelled() }
+                    .setOnCancelListener { onCancelled() }
+                    .create()
+            } else {
+                null
+            }
+            dialog?.show()
+
+            val saveButton = if (inlineContainer != null) {
+                MaterialButton(context).apply {
+                    text = "Save recurring delivery"
+                    layout.addView(this)
+                    inlineContainer.removeAllViews()
+                    inlineContainer.addView(layout)
+                }
+            } else {
+                dialog!!.getButton(AlertDialog.BUTTON_POSITIVE)
+            }
+
+            fun persist(delivery: WeeklySubscription, orderToday: Boolean) {
+                saveButton.isEnabled = false
+                dialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.isEnabled = false
+                dialog?.setCancelable(false)
+                onSavingChanged(true)
+                val task = if (existing == null) {
+                    FirebaseHelper.addSubscription(delivery, orderToday)
+                } else {
+                    FirebaseHelper.updateWeeklyDelivery(delivery, existing)
+                }
+                task.addOnSuccessListener {
+                    dialog?.dismiss()
+                    onSavingChanged(false)
+                    if (orderToday) {
+                        Toast.makeText(
+                            context,
+                            "Today's selected items were ordered. The next recurring delivery is ${dateFormat.format(Date(delivery.nextDeliveryAt))}.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    onSaved()
+                }.addOnFailureListener { error ->
+                    saveButton.isEnabled = true
+                    dialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.isEnabled = true
+                    dialog?.setCancelable(true)
+                    onSavingChanged(false)
+                    Toast.makeText(
+                        context,
+                        error.message ?: "Could not save recurring delivery",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+
+            saveButton.setOnClickListener {
+                val days = interval.text.toString().toIntOrNull() ?: 0
+                if (days !in 1..3650) {
+                    interval.error = "Enter 1 to 3650 days"
+                    return@setOnClickListener
+                }
+                val selectedControls = itemControls.filter { it.selected.isChecked }
+                if (selectedControls.isEmpty()) {
+                    Toast.makeText(context, "Select at least one item", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                var invalidQuantity = false
+                val selectedItems = selectedControls.mapNotNull { control ->
+                    val count = control.quantity.text.toString().toIntOrNull() ?: 0
+                    if (count <= 0) {
+                        control.quantity.error = "Enter a positive quantity"
+                        invalidQuantity = true
+                        null
+                    } else {
+                        RecurringDeliveryItem(
+                            productId = control.product.id,
+                            productName = control.product.name,
+                            quantity = count,
+                            containerType = control.product.name
+                        )
+                    }
+                }
+                if (invalidQuantity) return@setOnClickListener
+
+                val deliveryAt = if (existing != null && days == existing.repeatEveryDays) {
+                    existing.nextDeliveryAt
+                } else {
+                    DeliveryFinalization.firstDeliveryAfter(System.currentTimeMillis(), days, hours)
+                }
+                if (!DeliveryFinalization.canEdit(deliveryAt, hours, System.currentTimeMillis())) {
+                    Toast.makeText(
+                        context,
+                        "The station's opening-time cutoff has passed. Try saving again.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@setOnClickListener
+                }
+
+                val firstItem = selectedItems.first()
+                val delivery = (existing ?: WeeklySubscription()).copy(
+                    customerUsername = customer.username,
+                    stationOwnerUsername = station.username,
+                    stationName = station.name,
+                    productId = firstItem.productId,
+                    productName = firstItem.productName,
+                    containerType = firstItem.containerType,
+                    quantity = firstItem.quantity,
+                    items = selectedItems,
+                    repeatEveryDays = days,
+                    nextDeliveryAt = deliveryAt,
+                    deliveryDay = "",
+                    deliveryTimeSlot = "",
+                    offeringType = OFFERING_PURCHASE,
+                    refillServiceId = "",
+                    refillInstructions = "",
+                    emptyContainerCount = 0
+                )
+
+                if (existing != null || checkoutItem != null) {
+                    persist(delivery, orderToday = false)
+                    return@setOnClickListener
+                }
+
+                val orderSummary = selectedItems.joinToString("\n") {
+                    "• ${it.quantity} × ${it.productName}"
+                }
+                AlertDialog.Builder(context)
+                    .setTitle("Place these items today?")
+                    .setMessage(
+                        "$orderSummary\n\nWould you like to order the selected items today? " +
+                            "Today's orders will use Cash on Delivery. Your recurring delivery will then continue every " +
+                            "$days day(s), with the next one on ${dateFormat.format(Date(deliveryAt))}."
+                    )
+                    .setPositiveButton("Order today") { _, _ -> persist(delivery, orderToday = true) }
+                    .setNegativeButton("Start on ${dateFormat.format(Date(deliveryAt))}") { _, _ ->
+                        persist(delivery, orderToday = false)
+                    }
+                    .setNeutralButton("Back", null)
+                    .show()
+            }
         }.addOnFailureListener {
-            Toast.makeText(context, "Could not load station bottle types", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Could not load station items", Toast.LENGTH_LONG).show()
+            onCancelled()
         }
     }
 }

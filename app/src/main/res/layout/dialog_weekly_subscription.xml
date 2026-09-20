@@ -63,28 +63,7 @@
             android:paddingHorizontal="12dp" />
     </com.google.android.material.card.MaterialCardView>
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Preferred delivery window"
-        android:textColor="@color/text_primary"
-        android:textStyle="bold" />
 
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_marginTop="6dp"
-        app:cardBackgroundColor="@color/gray_light"
-        app:cardCornerRadius="16dp"
-        app:cardElevation="0dp">
-
-        <Spinner
-            android:id="@+id/spnSubscriptionTime"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:paddingHorizontal="12dp" />
-    </com.google.android.material.card.MaterialCardView>
 
     <TextView
         android:id="@+id/tvSubscriptionSummary"

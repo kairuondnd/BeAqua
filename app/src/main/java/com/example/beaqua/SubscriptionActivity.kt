@@ -17,12 +17,21 @@ class SubscriptionActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyState: LinearLayout
     private val subscriptions = mutableListOf<WeeklySubscription>()
+    private var reminderOpened = false
+    private val stationHours = mutableMapOf<String, OperatingHours>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_subscriptions)
 
         username = intent.getStringExtra("USERNAME").orEmpty()
+        if (intent.hasExtra("REMINDER_SUBSCRIPTION_ID") &&
+            getSharedPreferences("delivery_reminders", MODE_PRIVATE).getString("customer", null) != username) {
+            Toast.makeText(this, "Sign in to review your automated delivery", Toast.LENGTH_LONG).show()
+            startActivity(android.content.Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
         if (username.isEmpty()) {
             finish()
             return
@@ -34,7 +43,13 @@ class SubscriptionActivity : AppCompatActivity() {
 
         findViewById<ImageButton>(R.id.btnBackSubscriptions).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnBrowseForSubscription).setOnClickListener { finish() }
-        loadSubscriptions()
+        reminderOpened = savedInstanceState?.getBoolean("reminderOpened") ?: false
+        FirebaseHelper.processDueSubscriptions(customerUsername = username).addOnCompleteListener { loadSubscriptions() }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("reminderOpened", reminderOpened)
+        super.onSaveInstanceState(outState)
     }
 
     private fun loadSubscriptions() {
@@ -57,9 +72,29 @@ class SubscriptionActivity : AppCompatActivity() {
                         setSubscriptionActive(subscription, active)
                     },
                     onCancel = { subscription -> confirmCancel(subscription) },
-                    onEdit = { subscription -> editDelivery(subscription) }
+                    onEdit = { subscription -> editDelivery(subscription) },
+                    stationHours = stationHours
                 )
+                subscriptions.map { it.stationOwnerUsername }.distinct().forEach { stationUsername ->
+                    FirebaseHelper.getUser(stationUsername).addOnSuccessListener { snapshot ->
+                        snapshot.toObject(User::class.java)?.let {
+                            stationHours[stationUsername] = it.operatingHours
+                            recyclerView.adapter?.notifyDataSetChanged()
+                        }
+                    }
+                }
                 updateEmptyState()
+                if (!reminderOpened) {
+                    reminderOpened = true
+                    subscriptions.find { it.id == intent.getStringExtra("REMINDER_SUBSCRIPTION_ID") }
+                        ?.let {
+                            if (it.nextDeliveryAt == intent.getLongExtra("REMINDER_DELIVERY_AT", 0L) && it.active) {
+                                editDelivery(it)
+                            } else {
+                                Toast.makeText(this, "That delivery has changed or was finalized. Your current schedules are shown here.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                }
             }
             .addOnFailureListener {
                 Toast.makeText(this, "Unable to load automated deliveries", Toast.LENGTH_SHORT).show()
@@ -84,9 +119,8 @@ class SubscriptionActivity : AppCompatActivity() {
     private fun setSubscriptionActive(subscription: WeeklySubscription, active: Boolean) {
         FirebaseHelper.updateSubscriptionActive(subscription.id, active)
             .addOnSuccessListener {
-                subscription.active = active
-                subscription.lastStatus = if (active) "Scheduled" else "Paused"
-                recyclerView.adapter?.notifyItemChanged(subscriptions.indexOf(subscription))
+                // Resuming can advance nextDeliveryAt; render the saved date, not the stale local copy.
+                loadSubscriptions()
             }
             .addOnFailureListener {
                 recyclerView.adapter?.notifyItemChanged(subscriptions.indexOf(subscription))
@@ -101,7 +135,10 @@ class SubscriptionActivity : AppCompatActivity() {
     private fun confirmCancel(subscription: WeeklySubscription) {
         AlertDialog.Builder(this)
             .setTitle("Cancel automated delivery?")
-            .setMessage("${subscription.productName} will no longer be ordered automatically.")
+            .setMessage(
+                subscription.deliveryItems().joinToString(", ") { it.productName } +
+                    " will no longer be ordered automatically."
+            )
             .setPositiveButton("Remove delivery") { _, _ ->
                 FirebaseHelper.deleteSubscription(subscription.id)
                     .addOnSuccessListener {
@@ -111,7 +148,7 @@ class SubscriptionActivity : AppCompatActivity() {
                         updateEmptyState()
                     }
                     .addOnFailureListener {
-                        Toast.makeText(this, "Could not cancel subscription", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, it.message ?: "Could not cancel subscription", Toast.LENGTH_LONG).show()
                     }
             }
             .setNegativeButton("Keep it", null)

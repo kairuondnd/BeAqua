@@ -28,6 +28,13 @@ object FirebaseHelper {
         return usersCollection.document(user.username).set(user)
     }
 
+    fun createCustomer(user: User): Task<Void> = db.runTransaction<Void> { transaction ->
+        val ref = usersCollection.document(user.username)
+        check(!transaction.get(ref).exists()) { "Username already exists" }
+        transaction.set(ref, user)
+        null
+    }
+
     fun addStationOwnerWithUniqueEmail(user: User): Task<Void> {
         val normalizedEmail = user.emailAddress.trim().lowercase()
         require(normalizedEmail.isNotBlank()) { "Business email is required" }
@@ -55,7 +62,7 @@ object FirebaseHelper {
     }
 
     fun getUser(username: String): Task<DocumentSnapshot> {
-        return usersCollection.document(username).get()
+        return traceRequest("user.read", usersCollection.document(username).get())
     }
 
     fun isEmailRegistered(email: String): Task<Boolean> {
@@ -239,6 +246,22 @@ object FirebaseHelper {
     fun placeOrders(user: User, cartItems: List<CartItem>, selectedPayment: String, isPaid: Boolean, isRush: Boolean, rushOrderFee: Double, deliveryFee: Double): Task<String?> {
         return db.runTransaction { transaction ->
             if (cartItems.isEmpty()) throw IllegalStateException("The cart is empty")
+            require(cartItems.map { it.id }.distinct().size == cartItems.size) { "Duplicate cart items. Refresh your cart." }
+            // Reading cart entries makes concurrent checkouts conflict and retry before creating orders.
+            for (item in cartItems) {
+                require(item.id.isNotBlank() && item.quantity > 0) { "Invalid cart item. Refresh your cart." }
+                val saved = transaction.get(cartCollection.document(item.id)).toObject(CartItem::class.java)
+                    ?: error("This cart was already checked out or changed. Refresh your cart.")
+                check(saved.customerUsername == user.username && saved.productId == item.productId &&
+                    saved.stationOwnerUsername == item.stationOwnerUsername && saved.quantity == item.quantity &&
+                    saved.offeringType == item.offeringType && saved.refillInstructions == item.refillInstructions) {
+                    "Your cart changed. Refresh it before checking out."
+                }
+            }
+            require(cartItems.map { it.stationOwnerUsername }.distinct().size == 1) {
+                "Check out one water station at a time"
+            }
+            val currentProducts = mutableMapOf<String, Product>()
             val purchaseIds = cartItems
                 .filter { it.offeringType != OFFERING_REFILL }
                 .map { it.productId }
@@ -260,6 +283,8 @@ object FirebaseHelper {
                 if (!snapshot.exists()) {
                     throw Exception("A selected container is no longer offered by the station")
                 }
+                currentProducts[productId] = snapshot.toObject(Product::class.java)
+                    ?: error("A selected container is unavailable")
             }
             for (ownerUsername in stationUsernames) {
                 val stationSnapshot = transaction.get(usersCollection.document(ownerUsername))
@@ -274,6 +299,21 @@ object FirebaseHelper {
                     )
                 }
                 orderStations[ownerUsername] = station
+            }
+            for (item in cartItems) {
+                val station = orderStations.getValue(item.stationOwnerUsername)
+                val product = currentProducts[item.productId]
+                if (item.offeringType != OFFERING_REFILL) {
+                    check(product != null && product.ownerUsername == station.username) { "Product does not belong to this station" }
+                    check(product.price == item.productPrice) { "A product price changed. Review your cart and try again." }
+                }
+                check(station.deliveryFee == deliveryFee &&
+                    (!isRush || (station.rushOrderEnabled && station.rushOrderFee == rushOrderFee))) {
+                    "Station delivery fees changed. Review your cart and try again."
+                }
+                if (item.offeringType == OFFERING_REFILL) {
+                    check(station.refillFee == item.productPrice) { "The refill price changed. Review your cart and try again." }
+                }
             }
             for (ownerUsername in refillOwnerUsernames) {
                 val station = orderStations[ownerUsername]
@@ -303,7 +343,7 @@ object FirebaseHelper {
                 val currentUnitPrice = if (item.offeringType == OFFERING_REFILL) {
                     currentStation.refillFee
                 } else {
-                    item.productPrice
+                    currentProducts.getValue(item.productId).price
                 }
                 val order = Order(
                     id = orderId,
@@ -317,8 +357,6 @@ object FirebaseHelper {
                     quantity = item.quantity,
                     totalPrice = (currentUnitPrice * item.quantity) + rushFeePerItem + deliveryFeePerItem,
                     containerType = item.containerType,
-                    deliveryTimeSlot = currentStation.etaSettings
-                        .deliveryEstimateAt(checkoutTimestamp),
                     paymentMethod = selectedPayment,
                     status = "Pending",
                     pendingExpiresAt = checkoutTimestamp + PENDING_ORDER_TIMEOUT_MILLIS,
@@ -373,9 +411,46 @@ object FirebaseHelper {
         return ordersCollection.document(orderId).update(updates)
     }
 
-    fun cancelExpiredPendingOrders(now: Long = System.currentTimeMillis()): Task<Void> {
-        return ordersCollection
-            .whereEqualTo("status", "Pending")
+    fun acceptOrder(
+        orderId: String,
+        estimatedDeliveryDate: Long,
+        estimatedDeliveryTimeZoneId: String,
+        markPaid: Boolean = false
+    ): Task<Void> {
+        require(orderId.isNotBlank()) { "Order ID is required" }
+        require(
+            DeliveryEta.isTodayOrFuture(
+                estimatedDeliveryDate,
+                timeZoneId = estimatedDeliveryTimeZoneId
+            )
+        ) { "Delivery ETA must be today or a future date" }
+
+        val orderReference = ordersCollection.document(orderId)
+        return db.runTransaction<Void> { transaction ->
+            val order = transaction.get(orderReference).toObject(Order::class.java)
+                ?: throw IllegalStateException("Order no longer exists")
+            check(order.status == "Pending") { "Only pending orders can be accepted" }
+
+            val updates = mutableMapOf<String, Any>(
+                "status" to "Accepted",
+                "estimatedDeliveryDate" to DeliveryEta.normalize(
+                    estimatedDeliveryDate,
+                    estimatedDeliveryTimeZoneId
+                ),
+                "estimatedDeliveryTimeZoneId" to estimatedDeliveryTimeZoneId
+            )
+            if (markPaid) updates["isPaid"] = true
+            transaction.update(orderReference, updates)
+            null
+        }
+    }
+
+    fun cancelExpiredPendingOrders(now: Long = System.currentTimeMillis(),
+                                   customerUsername: String? = null, stationOwnerUsername: String? = null): Task<Void> {
+        var query: Query = ordersCollection.whereEqualTo("status", "Pending")
+        if (customerUsername != null) query = query.whereEqualTo("customerName", customerUsername)
+        if (stationOwnerUsername != null) query = query.whereEqualTo("stationOwnerUsername", stationOwnerUsername)
+        return query
             .get()
             .continueWithTask { queryTask ->
                 if (!queryTask.isSuccessful) {
@@ -461,45 +536,130 @@ object FirebaseHelper {
     }
 
     // --- Automated delivery schedules ---
-    private fun validateDelivery(transaction: com.google.firebase.firestore.Transaction, delivery: WeeklySubscription) {
-        require(delivery.quantity > 0) { "Enter a positive quantity" }
+    private data class DeliveryResources(
+        val station: User,
+        val productsById: Map<String, Product>,
+        val items: List<RecurringDeliveryItem>
+    )
+
+    private fun validateDelivery(
+        transaction: com.google.firebase.firestore.Transaction,
+        delivery: WeeklySubscription
+    ): DeliveryResources {
         require(delivery.repeatEveryDays in 1..3650) { "Choose 1 to 3650 days" }
         val station = transaction.get(usersCollection.document(delivery.stationOwnerUsername)).toObject(User::class.java)
             ?: throw IllegalStateException("Station unavailable")
         check(station.isApprovedStationOwner()) { "Station is not approved" }
-        check(delivery.deliveryTimeSlot in station.etaSettings.customerDeliveryWindows()) { "Choose an available delivery window" }
-        if (delivery.offeringType == OFFERING_REFILL) {
-            check(station.refillServiceEnabled && station.refillFee > 0.0) { "Refill service unavailable" }
-        } else {
-            val product = transaction.get(productsCollection.document(delivery.productId)).toObject(Product::class.java)
-                ?: throw IllegalStateException("Bottle type no longer available")
-            check(product.ownerUsername == station.username) { "Choose a bottle from this station" }
+        require(DeliveryFinalization.canEdit(delivery.nextDeliveryAt, station.operatingHours, System.currentTimeMillis())) {
+            "Editing closes when the station opens on delivery day. Choose a later delivery date."
         }
+        require(delivery.offeringType == OFFERING_PURCHASE) {
+            "Recurring delivery is available for station sale items only"
+        }
+        val items = delivery.deliveryItems()
+        require(items.isNotEmpty()) { "Select at least one item" }
+        require(items.all { it.quantity > 0 }) { "Enter a positive quantity for every selected item" }
+        require(items.map { it.productId }.distinct().size == items.size) { "Each item can only be selected once" }
+        val productsById = items.associate { item ->
+            val product = transaction.get(productsCollection.document(item.productId)).toObject(Product::class.java)
+                ?: throw IllegalStateException("${item.productName.ifBlank { "An item" }} is no longer available")
+            check(product.ownerUsername == station.username) { "Choose items from this station" }
+            item.productId to product
+        }
+        return DeliveryResources(station, productsById, items)
     }
 
-    fun addSubscription(subscription: WeeklySubscription): Task<Void> {
+    fun addSubscription(subscription: WeeklySubscription, orderToday: Boolean = false): Task<Void> {
         val ref = subscriptionsCollection.document()
+        val now = System.currentTimeMillis()
         subscription.id = ref.id
-        subscription.createdAt = System.currentTimeMillis()
+        subscription.createdAt = now
+        val firstOrderIds = if (orderToday) {
+            subscription.deliveryItems().map {
+                OrderIdGenerator.generate(subscription.stationName.ifBlank { subscription.stationOwnerUsername })
+            }
+        } else {
+            emptyList()
+        }
         return db.runTransaction<Void> { transaction ->
-            require(subscription.nextDeliveryAt > System.currentTimeMillis()) { "Choose a future delivery date" }
-            validateDelivery(transaction, subscription)
+            val resources = validateDelivery(transaction, subscription)
+            val customer = if (orderToday) {
+                transaction.get(usersCollection.document(subscription.customerUsername)).toObject(User::class.java)
+                    ?: throw IllegalStateException("Customer account unavailable")
+            } else {
+                null
+            }
+
+            if (orderToday) {
+                check(resources.station.isStationOpen(
+                    java.util.Calendar.getInstance(
+                        java.util.TimeZone.getTimeZone(resources.station.operatingHours.timeZoneId)
+                    )
+                )) { "${resources.station.name.ifBlank { "This station" }} is currently closed" }
+                check(!customer?.address.isNullOrBlank()) { "Add your delivery address in Profile first" }
+
+                val deliveryFeePerItem = resources.station.deliveryFee / resources.items.size
+                resources.items.forEachIndexed { index, item ->
+                    val product = resources.productsById.getValue(item.productId)
+                    val orderId = firstOrderIds[index]
+                    val order = Order(
+                        id = orderId,
+                        productId = item.productId,
+                        productName = product.name,
+                        imageUri = product.imageUri,
+                        customerName = customer!!.username,
+                        customerAddress = customer.address,
+                        stationOwnerUsername = resources.station.username,
+                        stationName = resources.station.name.ifBlank { resources.station.username },
+                        quantity = item.quantity,
+                        totalPrice = (product.price * item.quantity) + deliveryFeePerItem,
+                        containerType = product.name,
+                        paymentMethod = "Cash on Delivery",
+                        status = "Pending",
+                        pendingExpiresAt = now + PENDING_ORDER_TIMEOUT_MILLIS,
+                        customerLat = customer.latitude,
+                        customerLon = customer.longitude,
+                        timestamp = now,
+                        isRated = false,
+                        isRushOrder = false,
+                        rushOrderFee = 0.0,
+                        deliveryFee = deliveryFeePerItem,
+                        isPaid = false,
+                        isSubscriptionOrder = true,
+                        subscriptionId = ref.id,
+                        scheduledDeliveryDate = DeliveryEta.today(
+                            now,
+                            resources.station.operatingHours.timeZoneId
+                        ),
+                        offeringType = OFFERING_PURCHASE
+                    )
+                    transaction.set(ordersCollection.document(orderId), order)
+                }
+                subscription.lastOrderId = firstOrderIds.firstOrNull().orEmpty()
+                subscription.lastOrderIds = firstOrderIds
+                subscription.lastOrderAt = now
+                subscription.lastStatus = "${firstOrderIds.size} order item(s) created today"
+            }
             transaction.set(ref, subscription)
             null
         }
     }
 
-    fun updateWeeklyDelivery(delivery: WeeklySubscription): Task<Void> {
+    fun updateWeeklyDelivery(delivery: WeeklySubscription, original: WeeklySubscription): Task<Void> {
         return db.runTransaction<Void> { transaction ->
             val ref = subscriptionsCollection.document(delivery.id)
             val existing = transaction.get(ref).toObject(WeeklySubscription::class.java)
                 ?: throw IllegalStateException("Delivery schedule no longer exists")
             check(existing.customerUsername == delivery.customerUsername &&
                 existing.stationOwnerUsername == delivery.stationOwnerUsername)
-            require(delivery.nextDeliveryAt > System.currentTimeMillis()) { "Choose a future delivery date" }
+            check(existing.nextDeliveryAt == original.nextDeliveryAt && existing.lastOrderAt == original.lastOrderAt) {
+                "This delivery has changed. Reopen it to edit the current schedule."
+            }
+            requireDeliveryEditable(transaction, existing)
             validateDelivery(transaction, delivery)
             transaction.set(ref, delivery.copy(active = existing.active,
                 createdAt = existing.createdAt, lastOrderId = existing.lastOrderId,
+                lastOrderIds = existing.lastOrderIds,
                 lastOrderAt = existing.lastOrderAt, lastStatus = if (existing.active) "Scheduled" else "Paused"))
             null
         }
@@ -513,10 +673,15 @@ object FirebaseHelper {
             val ref = subscriptionsCollection.document(subscriptionId)
             val delivery = transaction.get(ref).toObject(WeeklySubscription::class.java)
                 ?: throw IllegalStateException("Delivery schedule no longer exists")
+            if (delivery.active) requireDeliveryEditable(transaction, delivery)
             if (active) {
+                val station = transaction.get(usersCollection.document(delivery.stationOwnerUsername))
+                    .toObject(User::class.java) ?: error("Station unavailable")
+                if (!DeliveryFinalization.canEdit(delivery.nextDeliveryAt, station.operatingHours, System.currentTimeMillis())) {
+                    delivery.nextDeliveryAt = DeliveryFinalization.nextDelivery(
+                        delivery.nextDeliveryAt, delivery.repeatEveryDays, station.operatingHours, System.currentTimeMillis())
+                }
                 validateDelivery(transaction, delivery)
-                delivery.nextDeliveryAt = DeliveryRecurrence.nextAfter(
-                    delivery.nextDeliveryAt, delivery.repeatEveryDays, System.currentTimeMillis())
             }
             transaction.update(ref, mapOf("active" to active, "nextDeliveryAt" to delivery.nextDeliveryAt,
                 "lastStatus" to if (active) "Scheduled" else "Paused"))
@@ -524,24 +689,43 @@ object FirebaseHelper {
         }
     }
 
-    fun deleteSubscription(subscriptionId: String): Task<Void> =
-        subscriptionsCollection.document(subscriptionId).delete()
+    private fun requireDeliveryEditable(transaction: com.google.firebase.firestore.Transaction, delivery: WeeklySubscription) {
+        val station = transaction.get(usersCollection.document(delivery.stationOwnerUsername))
+            .toObject(User::class.java) ?: error("Station unavailable")
+        check(DeliveryFinalization.canEdit(delivery.nextDeliveryAt, station.operatingHours, System.currentTimeMillis())) {
+            "This delivery is finalized: the station's opening-time cutoff has passed. Refresh to manage the next delivery."
+        }
+    }
+
+    fun deleteSubscription(subscriptionId: String): Task<Void> = db.runTransaction<Void> { transaction ->
+        val ref = subscriptionsCollection.document(subscriptionId)
+        val delivery = transaction.get(ref).toObject(WeeklySubscription::class.java)
+        if (delivery != null) {
+            if (delivery.active) requireDeliveryEditable(transaction, delivery)
+            transaction.delete(ref)
+        }
+        null
+    }
 
     /**
      * Creates each due recurring order at most once. Product stock, current price,
      * customer location and the station's current delivery fee are read inside the
      * same Firestore transaction used to create the order.
      */
-    fun processDueSubscriptions(): Task<Void> {
+    fun processDueSubscriptions(customerUsername: String? = null, stationOwnerUsername: String? = null): Task<Void> {
         val now = System.currentTimeMillis()
-        return subscriptionsCollection
-            .whereEqualTo("active", true)
+        var query: Query = subscriptionsCollection.whereEqualTo("active", true)
+        if (customerUsername != null) query = query.whereEqualTo("customerUsername", customerUsername)
+        if (stationOwnerUsername != null) query = query.whereEqualTo("stationOwnerUsername", stationOwnerUsername)
+        return query
             .get()
             .continueWithTask { queryTask ->
                 val dueTasks = queryTask.result?.documents
                     ?.mapNotNull { document ->
                         val subscription = document.toObject(WeeklySubscription::class.java)
-                        if (subscription != null && subscription.nextDeliveryAt <= now) {
+                        // Opening-time adjustment can move a saved timestamp within its calendar day.
+                        // Dates over two days away cannot be due, even across timezone/DST changes.
+                        if (subscription != null && subscription.nextDeliveryAt <= now + 48L * 60 * 60 * 1000) {
                             processDueSubscription(document.id, now)
                         } else {
                             null
@@ -564,7 +748,25 @@ object FirebaseHelper {
             val subscription = subscriptionSnapshot.toObject(WeeklySubscription::class.java)
                 ?: return@runTransaction Unit
 
-            if (!subscription.active || subscription.nextDeliveryAt > now) {
+            if (!subscription.active) {
+                return@runTransaction Unit
+            }
+            if (subscription.offeringType != OFFERING_PURCHASE) {
+                transaction.update(
+                    subscriptionRef,
+                    mapOf(
+                        "active" to false,
+                        "lastStatus" to "Paused: recurring refills are no longer supported"
+                    )
+                )
+                return@runTransaction Unit
+            }
+            val items = subscription.deliveryItems()
+            if (items.isEmpty()) {
+                transaction.update(
+                    subscriptionRef,
+                    mapOf("active" to false, "lastStatus" to "Paused: no recurring items selected")
+                )
                 return@runTransaction Unit
             }
 
@@ -573,28 +775,21 @@ object FirebaseHelper {
 
             // Firestore transactions require all reads before any writes.
             val stationSnapshot = transaction.get(stationRef)
-            val customerSnapshot = transaction.get(customerRef)
-            val productSnapshot = if (subscription.offeringType != OFFERING_REFILL) {
-                transaction.get(productsCollection.document(subscription.productId))
-            } else {
-                null
-            }
-
-            val nextDelivery = DeliveryRecurrence.nextAfter(subscription.nextDeliveryAt, subscription.repeatEveryDays, now)
             val station = stationSnapshot.toObject(User::class.java)
-            val customer = customerSnapshot.toObject(User::class.java)
-            val product = if (subscription.offeringType != OFFERING_REFILL) {
-                productSnapshot?.toObject(Product::class.java)
-            } else {
-                null
-            }
-            val offeringUnavailable = if (subscription.offeringType == OFFERING_REFILL) {
-                station == null || !station.refillServiceEnabled || station.refillFee <= 0.0
-            } else {
-                product == null
+            val hours = station?.operatingHours ?: OperatingHours()
+            if (DeliveryFinalization.canEdit(subscription.nextDeliveryAt, hours, now)) return@runTransaction Unit
+            val customerSnapshot = transaction.get(customerRef)
+            val productsById = items.associate { item ->
+                item.productId to transaction.get(productsCollection.document(item.productId))
+                    .toObject(Product::class.java)
             }
 
-            if (offeringUnavailable || station == null || customer == null || !station.isApprovedStationOwner() || (product != null && product.ownerUsername != station.username)) {
+            val nextDelivery = DeliveryFinalization.nextDelivery(subscription.nextDeliveryAt, subscription.repeatEveryDays, hours, now)
+            val customer = customerSnapshot.toObject(User::class.java)
+            val offeringUnavailable = productsById.values.any { it == null } ||
+                (station != null && productsById.values.filterNotNull().any { it.ownerUsername != station.username })
+
+            if (offeringUnavailable || station == null || customer == null || !station.isApprovedStationOwner()) {
                 transaction.update(
                     subscriptionRef,
                     mapOf(
@@ -606,69 +801,49 @@ object FirebaseHelper {
             }
 
             val stationName = station.name.ifBlank { station.username }
-            val orderId = OrderIdGenerator.generate(stationName)
-            val orderRef = ordersCollection.document(orderId)
-            val deliveryFee = station.deliveryFee
-            val offeringId = if (subscription.offeringType == OFFERING_REFILL) {
-                subscription.productId.ifBlank { "REFILL_${station.username}" }
-            } else {
-                product?.id.orEmpty()
+            val deliveryFeePerItem = station.deliveryFee / items.size
+            val orderIds = items.map { OrderIdGenerator.generate(stationName) }
+            items.forEachIndexed { index, item ->
+                val product = productsById.getValue(item.productId)!!
+                val orderId = orderIds[index]
+                val order = Order(
+                    id = orderId,
+                    productId = item.productId,
+                    productName = product.name,
+                    imageUri = product.imageUri,
+                    customerName = customer.username,
+                    customerAddress = customer.address,
+                    stationOwnerUsername = station.username,
+                    stationName = stationName,
+                    quantity = item.quantity,
+                    totalPrice = (product.price * item.quantity) + deliveryFeePerItem,
+                    containerType = product.name,
+                    paymentMethod = "Cash on Delivery",
+                    status = "Pending",
+                    pendingExpiresAt = now + PENDING_ORDER_TIMEOUT_MILLIS,
+                    customerLat = customer.latitude,
+                    customerLon = customer.longitude,
+                    timestamp = now,
+                    isRated = false,
+                    isRushOrder = false,
+                    rushOrderFee = 0.0,
+                    deliveryFee = deliveryFeePerItem,
+                    isPaid = false,
+                    isSubscriptionOrder = true,
+                    subscriptionId = subscriptionId,
+                    scheduledDeliveryDate = subscription.nextDeliveryAt,
+                    offeringType = OFFERING_PURCHASE
+                )
+                transaction.set(ordersCollection.document(orderId), order)
             }
-            val offeringName = if (subscription.offeringType == OFFERING_REFILL) {
-                "Water Refill"
-            } else {
-                product?.name.orEmpty()
-            }
-            val offeringPrice = if (subscription.offeringType == OFFERING_REFILL) {
-                station.refillFee
-            } else {
-                product?.price ?: 0.0
-            }
-            val order = Order(
-                id = orderId,
-                productId = offeringId,
-                productName = offeringName,
-                imageUri = product?.imageUri,
-                customerName = customer.username,
-                customerAddress = customer.address,
-                stationOwnerUsername = station.username,
-                stationName = stationName,
-                quantity = subscription.quantity,
-                totalPrice = (offeringPrice * subscription.quantity) + deliveryFee,
-                containerType = subscription.containerType,
-                deliveryTimeSlot = subscription.deliveryTimeSlot,
-                paymentMethod = "Cash on Delivery",
-                status = "Pending",
-                pendingExpiresAt = now + PENDING_ORDER_TIMEOUT_MILLIS,
-                customerLat = customer.latitude,
-                customerLon = customer.longitude,
-                timestamp = now,
-                isRated = false,
-                isRushOrder = false,
-                rushOrderFee = 0.0,
-                deliveryFee = deliveryFee,
-                isPaid = false,
-                isSubscriptionOrder = true,
-                subscriptionId = subscriptionId,
-                scheduledDeliveryDate = subscription.nextDeliveryAt,
-                offeringType = subscription.offeringType,
-                refillServiceId = subscription.refillServiceId,
-                refillInstructions = subscription.refillInstructions,
-                emptyContainerCount = if (subscription.offeringType == OFFERING_REFILL) {
-                    subscription.emptyContainerCount.coerceAtLeast(subscription.quantity)
-                } else {
-                    0
-                }
-            )
-
-            transaction.set(orderRef, order)
             transaction.update(
                 subscriptionRef,
                 mapOf(
                     "nextDeliveryAt" to nextDelivery,
-                    "lastOrderId" to orderId,
+                    "lastOrderId" to orderIds.first(),
+                    "lastOrderIds" to orderIds,
                     "lastOrderAt" to now,
-                    "lastStatus" to "Order created"
+                    "lastStatus" to "${orderIds.size} order item(s) created"
                 )
             )
             Unit
@@ -683,15 +858,34 @@ object FirebaseHelper {
     fun addToCart(cartItem: CartItem): Task<Void> {
         val docRef = cartCollection.document()
         cartItem.id = docRef.id
-        return docRef.set(cartItem)
+        return traceRequest("cart.add", docRef.set(cartItem))
     }
 
     fun updateCartItem(cartItem: CartItem): Task<Void> {
         return cartCollection.document(cartItem.id).set(cartItem)
     }
 
+    fun incrementCartItem(cartItem: CartItem, additionalQuantity: Int): Task<Void> {
+        require(additionalQuantity > 0)
+        val updates = mutableMapOf<String, Any>(
+            "quantity" to com.google.firebase.firestore.FieldValue.increment(additionalQuantity.toLong()),
+            "totalPrice" to com.google.firebase.firestore.FieldValue.increment(cartItem.productPrice * additionalQuantity))
+        if (cartItem.offeringType == OFFERING_REFILL) {
+            updates["emptyContainerCount"] = com.google.firebase.firestore.FieldValue.increment(additionalQuantity.toLong())
+        }
+        return traceRequest("cart.increment", cartCollection.document(cartItem.id).update(updates))
+    }
+
+    private fun <T> traceRequest(operation: String, task: Task<T>): Task<T> {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        if (BuildConfig.DEBUG) task.addOnCompleteListener {
+            android.util.Log.d("BeAquaPerformance", "$operation completed in ${android.os.SystemClock.elapsedRealtime() - startedAt} ms; success=${it.isSuccessful}")
+        }
+        return task
+    }
+
     fun getCartItems(customerUsername: String): Task<QuerySnapshot> {
-        return cartCollection.whereEqualTo("customerUsername", customerUsername).get()
+        return traceRequest("cart.read", cartCollection.whereEqualTo("customerUsername", customerUsername).get())
     }
 
     fun removeCartItem(cartItemId: String): Task<Void> {

@@ -9,6 +9,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.gms.tasks.Tasks
 import com.google.android.material.button.MaterialButton
@@ -40,6 +41,9 @@ class KycSubmissionActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_kyc_submission)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = returnToLogin()
+        })
 
         username = intent.getStringExtra("USERNAME").orEmpty()
         if (username.isBlank()) {
@@ -120,10 +124,6 @@ class KycSubmissionActivity : AppCompatActivity() {
                 Toast.makeText(this, "Upload failed: ${error.message}", Toast.LENGTH_LONG).show()
             }
         }
-    }
-
-    override fun onBackPressed() {
-        returnToLogin()
     }
 
     private fun documentPicker(onSelected: (Uri) -> Unit) =

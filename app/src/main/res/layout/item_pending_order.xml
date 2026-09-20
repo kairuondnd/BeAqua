@@ -93,7 +93,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Estimated delivery: 10:00 AM - 12:00 PM"
+            android:text="Status: Awaiting confirmation"
             android:textColor="@color/text_primary"
             android:textSize="13sp"
             android:textStyle="bold"

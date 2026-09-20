@@ -395,7 +395,7 @@ class SignupActivity : AppCompatActivity() {
         val createTask = if (user.accountType == "Station Owner") {
             FirebaseHelper.addStationOwnerWithUniqueEmail(user)
         } else {
-            FirebaseHelper.addUser(user)
+            FirebaseHelper.createCustomer(user)
         }
         createTask
             .addOnSuccessListener {

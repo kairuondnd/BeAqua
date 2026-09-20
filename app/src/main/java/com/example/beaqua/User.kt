@@ -95,7 +95,8 @@ data class User(
 data class OperatingHours(
     var openTime: String = "00:00",
     var closeTime: String = "00:00",
-    var statusOverride: String = STATUS_AUTO
+    var statusOverride: String = STATUS_AUTO,
+    var timeZoneId: String = "Asia/Manila"
 ) {
     companion object {
         const val STATUS_AUTO = "AUTO"

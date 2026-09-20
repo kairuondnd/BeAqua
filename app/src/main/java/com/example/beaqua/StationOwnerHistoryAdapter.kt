@@ -54,12 +54,15 @@ class StationOwnerHistoryAdapter(
         }
         
         var details =
-            "Type: ${order.containerType} | Estimated delivery: ${order.deliveryTimeSlot}"
+            "Type: ${order.containerType}"
         if (order.isRushOrder) {
             details += "\nRush Fee included: ₱${String.format("%.2f", order.rushOrderFee)}"
         }
         if (order.isRefill() && order.refillInstructions.isNotBlank()) {
             details += "\nNotes: ${order.refillInstructions}"
+        }
+        if (order.estimatedDeliveryDate > 0L) {
+            details += "\nEstimated delivery: ${DeliveryEta.label(order.estimatedDeliveryDate, order.estimatedDeliveryTimeZoneId)}"
         }
         holder.tvOrderDetails.text = details
         holder.tvStatus.text = "Status: ${order.status}"

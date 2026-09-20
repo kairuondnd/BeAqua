@@ -25,6 +25,8 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DeliveryReminderWorker.clear(this)
+        SubscriptionOrderWorker.clearAccount(this)
         setContentView(R.layout.activity_login)
 
         val ivLoginLogo = findViewById<ImageView>(R.id.ivLoginLogo)
@@ -94,7 +96,9 @@ class LoginActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            setLoginBusy(btnLogin, true)
             FirebaseHelper.getUser(username).addOnSuccessListener { document ->
+                setLoginBusy(btnLogin, false)
                 if (document.exists()) {
                     val user = document.toObject(User::class.java)
                     if (user == null) {
@@ -117,6 +121,7 @@ class LoginActivity : AppCompatActivity() {
                     Toast.makeText(this, "User not found", Toast.LENGTH_SHORT).show()
                 }
             }.addOnFailureListener { e ->
+                setLoginBusy(btnLogin, false)
                 Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }

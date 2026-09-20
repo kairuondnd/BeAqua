@@ -1,6 +1,7 @@
 package com.example.beaqua
 
 import android.Manifest
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -20,7 +21,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.firebase.firestore.DocumentChange
+import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 class StationOwnerActivity : AppCompatActivity() {
 
@@ -33,6 +36,7 @@ class StationOwnerActivity : AppCompatActivity() {
     private val IMAGE_PICK_CODE = 1001
     private val NOTIFICATION_PERMISSION_CODE = 1002
     private var accountNotificationListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var newOrdersListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     private lateinit var currentUsername: String
     private lateinit var tvNavName: TextView
@@ -138,8 +142,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun initializeApprovedStationOwner() {
-        FirebaseHelper.processDueSubscriptions()
-        FirebaseHelper.cancelExpiredPendingOrders()
+        SubscriptionOrderWorker.bindAccount(this, currentUsername, stationOwner = true)
 
         setupSideNav()
         checkNotificationPermission()
@@ -170,7 +173,7 @@ class StationOwnerActivity : AppCompatActivity() {
             "ORDERS" -> loadOrdersView(false)
             "PENDING_ORDERS" -> loadOrdersView(true)
             "INVENTORY" -> loadInventoryControls()
-            "ETA_SETTINGS" -> loadEtaSettings()
+            "ETA_SETTINGS" -> loadStationSettings()
             else -> loadDashboard()
         }
         
@@ -321,7 +324,8 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun listenForNewOrders() {
-        FirebaseHelper.ordersCollection
+        newOrdersListener?.remove()
+        newOrdersListener = FirebaseHelper.ordersCollection
             .whereEqualTo("stationOwnerUsername", currentUsername)
             .whereEqualTo("status", "Pending")
             .addSnapshotListener { snapshots, e ->
@@ -366,7 +370,7 @@ class StationOwnerActivity : AppCompatActivity() {
             drawerLayout.closeDrawer(GravityCompat.END)
         }
         findViewById<LinearLayout>(R.id.navStationSettings).setOnClickListener {
-            loadEtaSettings()
+            loadStationSettings()
             drawerLayout.closeDrawer(GravityCompat.END)
         }
         findViewById<LinearLayout>(R.id.navStationMessages).setOnClickListener {
@@ -415,7 +419,7 @@ class StationOwnerActivity : AppCompatActivity() {
             drawerLayout.closeDrawer(GravityCompat.END)
         }
         findViewById<MaterialButton>(R.id.btnSideSettings).setOnClickListener {
-            loadEtaSettings()
+            loadStationSettings()
             drawerLayout.closeDrawer(GravityCompat.END)
         }
         findViewById<MaterialButton>(R.id.btnSideProfile).setOnClickListener {
@@ -495,6 +499,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        newOrdersListener?.remove()
         accountNotificationListener?.remove()
         super.onDestroy()
     }
@@ -674,11 +679,9 @@ class StationOwnerActivity : AppCompatActivity() {
 
             val details = TextView(this).apply {
                 text = if (order.isRefill()) {
-                    "${order.status} • ${order.emptyContainerCount.coerceAtLeast(order.quantity)} empties\n" +
-                        "Estimated delivery: ${order.deliveryTimeSlot}"
+                    "${order.status} • ${order.emptyContainerCount.coerceAtLeast(order.quantity)} empties"
                 } else {
-                    "${order.status} • Qty ${order.quantity}\n" +
-                        "Estimated delivery: ${order.deliveryTimeSlot}"
+                    "${order.status} • Qty ${order.quantity}"
                 }
                 setTextColor(ContextCompat.getColor(this@StationOwnerActivity, R.color.text_secondary))
                 textSize = 13f
@@ -875,7 +878,7 @@ class StationOwnerActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadEtaSettings() {
+    private fun loadStationSettings() {
         val etaView = layoutInflater.inflate(R.layout.station_owner_home, null)
         val contentFrame = findViewById<FrameLayout>(R.id.stationContentFrame)
         contentFrame.removeAllViews()
@@ -884,14 +887,6 @@ class StationOwnerActivity : AppCompatActivity() {
         etaView.findViewById<View>(R.id.layoutDashboard).visibility = View.GONE
         etaView.findViewById<View>(R.id.layoutEtaSettings).visibility = View.VISIBLE
 
-        val etW1Start = etaView.findViewById<EditText>(R.id.etWindow1Start)
-        val etW1End = etaView.findViewById<EditText>(R.id.etWindow1End)
-        val etW1Eta = etaView.findViewById<EditText>(R.id.etWindow1Eta)
-        val etW2Start = etaView.findViewById<EditText>(R.id.etWindow2Start)
-        val etW2End = etaView.findViewById<EditText>(R.id.etWindow2End)
-        val etW2Eta = etaView.findViewById<EditText>(R.id.etWindow2Eta)
-        val etDefEta = etaView.findViewById<EditText>(R.id.etDefaultEta)
-        val btnSave = etaView.findViewById<MaterialButton>(R.id.btnSaveEtaSettings)
         
         val etDeliveryFee = etaView.findViewById<EditText>(R.id.etDeliveryFee)
         val switchRush = etaView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchRushOrder)
@@ -947,15 +942,6 @@ class StationOwnerActivity : AppCompatActivity() {
 
         fun bindSettings(user: User) {
             currentUserData = user
-            user.etaSettings.let { settings ->
-                etW1Start.setText(settings.window1Start)
-                etW1End.setText(settings.window1End)
-                etW1Eta.setText(settings.window1Eta)
-                etW2Start.setText(settings.window2Start)
-                etW2End.setText(settings.window2End)
-                etW2Eta.setText(settings.window2Eta)
-                etDefEta.setText(settings.defaultEta)
-            }
             etDeliveryFee.setText(String.format(Locale.getDefault(), "%.2f", user.deliveryFee))
             switchRush.isChecked = user.rushOrderEnabled
             etRushFee.setText(String.format(Locale.getDefault(), "%.2f", user.rushOrderFee))
@@ -1015,92 +1001,6 @@ class StationOwnerActivity : AppCompatActivity() {
                     Toast.makeText(
                         this,
                         "Could not update operating hours: ${error.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-        }
-
-        btnSave.setOnClickListener {
-            val firstStart = normalize24HourTime(etW1Start.text.toString())
-            val firstEnd = normalize24HourTime(etW1End.text.toString())
-            val secondStart = normalize24HourTime(etW2Start.text.toString())
-            val secondEnd = normalize24HourTime(etW2End.text.toString())
-            val firstEstimate = etW1Eta.text.toString().trim()
-            val secondEstimate = etW2Eta.text.toString().trim()
-            val fallbackEstimate = etDefEta.text.toString().trim()
-
-            if (firstStart == null) {
-                etW1Start.error = "Use 24-hour time, such as 07:00"
-                return@setOnClickListener
-            }
-            if (firstEnd == null) {
-                etW1End.error = "Use 24-hour time, such as 11:00"
-                return@setOnClickListener
-            }
-            if (secondStart == null) {
-                etW2Start.error = "Use 24-hour time, such as 12:00"
-                return@setOnClickListener
-            }
-            if (secondEnd == null) {
-                etW2End.error = "Use 24-hour time, such as 15:00"
-                return@setOnClickListener
-            }
-            if (timeInMinutes(firstStart) >= timeInMinutes(firstEnd)) {
-                etW1End.error = "Batch 1 cutoff must be after its start time"
-                return@setOnClickListener
-            }
-            if (timeInMinutes(secondStart) >= timeInMinutes(secondEnd)) {
-                etW2End.error = "Batch 2 cutoff must be after its start time"
-                return@setOnClickListener
-            }
-            if (timeInMinutes(secondStart) <= timeInMinutes(firstEnd)) {
-                etW2Start.error = "Batch 2 must start after the Batch 1 cutoff"
-                return@setOnClickListener
-            }
-            if (firstEstimate.isBlank()) {
-                etW1Eta.error = "Enter the delivery estimate customers should see"
-                return@setOnClickListener
-            }
-            if (secondEstimate.isBlank()) {
-                etW2Eta.error = "Enter the delivery estimate customers should see"
-                return@setOnClickListener
-            }
-            if (fallbackEstimate.isBlank()) {
-                etDefEta.error = "Enter the estimate for orders outside both batches"
-                return@setOnClickListener
-            }
-
-            val newSettings = EtaSettings(
-                window1Start = firstStart,
-                window1End = firstEnd,
-                window1Eta = firstEstimate,
-                window2Start = secondStart,
-                window2End = secondEnd,
-                window2Eta = secondEstimate,
-                defaultEta = fallbackEstimate
-            )
-
-            btnSave.isEnabled = false
-            FirebaseHelper.updateStationEtaSettings(currentUsername, newSettings)
-                .addOnSuccessListener {
-                    currentUserData = (currentUserData ?: User(username = currentUsername))
-                        .copy(etaSettings = newSettings)
-                    etW1Start.setText(firstStart)
-                    etW1End.setText(firstEnd)
-                    etW2Start.setText(secondStart)
-                    etW2End.setText(secondEnd)
-                    btnSave.isEnabled = true
-                    Toast.makeText(
-                        this,
-                        "Order cutoffs and delivery estimates updated",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                .addOnFailureListener { error ->
-                    btnSave.isEnabled = true
-                    Toast.makeText(
-                        this,
-                        "Could not update delivery estimates: ${error.message}",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -1246,8 +1146,7 @@ class StationOwnerActivity : AppCompatActivity() {
         }
         
         tvOrderInfo.text = infoText
-        orderView.findViewById<TextView>(R.id.tvOrderTime).text =
-            "Estimated delivery: ${order.deliveryTimeSlot}"
+        orderView.findViewById<TextView>(R.id.tvOrderTime).visibility = View.GONE
         orderView.findViewById<TextView>(R.id.tvPaymentMethod).text = "Payment: ${order.paymentMethod}${if(order.isPaid) " (PAID)" else ""}"
 
         orderView.findViewById<Button>(R.id.btnAccept).setOnClickListener { 
@@ -1256,16 +1155,12 @@ class StationOwnerActivity : AppCompatActivity() {
                     .setTitle("Verify GCash payment")
                     .setMessage("Check your GCash account for this customer's payment of ₱${order.totalPrice} before accepting order ${order.id}.")
                     .setPositiveButton("Payment received") { _, _ ->
-                        FirebaseHelper.updateOrderStatus(order.id, "Accepted", isPaid = true)
-                            .addOnSuccessListener { refreshOrders() }
-                            .addOnFailureListener { Toast.makeText(this, "Could not confirm payment", Toast.LENGTH_LONG).show() }
+                        showDeliveryEtaPicker(order, markPaid = true)
                     }
                     .setNegativeButton("Not yet", null).show()
                 return@setOnClickListener
             }
-            FirebaseHelper.updateOrderStatus(order.id, "Accepted").addOnSuccessListener {
-                refreshOrders()
-            }
+            showDeliveryEtaPicker(order, markPaid = false)
         }
         orderView.findViewById<Button>(R.id.btnReject).setOnClickListener {
             FirebaseHelper.updateOrderStatus(order.id, "Rejected").addOnSuccessListener {
@@ -1291,6 +1186,87 @@ class StationOwnerActivity : AppCompatActivity() {
         ordersContainer.addView(orderView)
     }
 
+    private fun showDeliveryEtaPicker(order: Order, markPaid: Boolean) {
+        val timeZoneId = currentUserData?.operatingHours?.timeZoneId
+            ?.takeIf { it.isNotBlank() }
+            ?: DeliveryEta.DEFAULT_TIME_ZONE_ID
+        val now = System.currentTimeMillis()
+        val today = DeliveryEta.today(now, timeZoneId)
+        val tomorrow = DeliveryEta.tomorrow(now, timeZoneId)
+        val choices = arrayOf(
+            DeliveryEta.label(today, timeZoneId, now),
+            DeliveryEta.label(tomorrow, timeZoneId, now),
+            "Choose another date"
+        )
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Estimated delivery date")
+            .setMessage("Choose the date you expect to deliver this order.")
+            .setItems(choices) { _, choice ->
+                when (choice) {
+                    0 -> acceptOrderWithEta(order, today, timeZoneId, markPaid)
+                    1 -> acceptOrderWithEta(order, tomorrow, timeZoneId, markPaid)
+                    else -> showCustomDeliveryDatePicker(order, timeZoneId, markPaid)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showCustomDeliveryDatePicker(
+        order: Order,
+        timeZoneId: String,
+        markPaid: Boolean
+    ) {
+        val timeZone = TimeZone.getTimeZone(timeZoneId)
+        val initialTimestamp = order.scheduledDeliveryDate
+            .takeIf { it > 0L && DeliveryEta.isTodayOrFuture(it, timeZoneId = timeZoneId) }
+            ?: DeliveryEta.tomorrow(timeZoneId = timeZoneId)
+        val initial = Calendar.getInstance(timeZone).apply { timeInMillis = initialTimestamp }
+
+        DatePickerDialog(
+            this,
+            { _, year, month, dayOfMonth ->
+                val selectedDate = DeliveryEta.fromDate(year, month, dayOfMonth, timeZoneId)
+                acceptOrderWithEta(order, selectedDate, timeZoneId, markPaid)
+            },
+            initial.get(Calendar.YEAR),
+            initial.get(Calendar.MONTH),
+            initial.get(Calendar.DAY_OF_MONTH)
+        ).apply {
+            datePicker.minDate = System.currentTimeMillis() - 60_000L
+            setTitle("Choose delivery date")
+            show()
+        }
+    }
+
+    private fun acceptOrderWithEta(
+        order: Order,
+        estimatedDeliveryDate: Long,
+        timeZoneId: String,
+        markPaid: Boolean
+    ) {
+        FirebaseHelper.acceptOrder(
+            orderId = order.id,
+            estimatedDeliveryDate = estimatedDeliveryDate,
+            estimatedDeliveryTimeZoneId = timeZoneId,
+            markPaid = markPaid
+        ).addOnSuccessListener {
+            Toast.makeText(
+                this,
+                "Order accepted. ETA: ${DeliveryEta.label(estimatedDeliveryDate, timeZoneId)}",
+                Toast.LENGTH_LONG
+            ).show()
+            refreshOrders()
+        }.addOnFailureListener { error ->
+            Toast.makeText(
+                this,
+                "Could not accept order: ${error.message ?: "Please try again"}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private fun addAcceptedOrder(order: Order) {
         val orderView = LayoutInflater.from(this).inflate(R.layout.item_accepted_order, acceptedOrdersContainer, false)
         val tvInfo = orderView.findViewById<TextView>(R.id.tvAcceptedOrderInfo)
@@ -1308,6 +1284,9 @@ class StationOwnerActivity : AppCompatActivity() {
         if (order.isRushOrder) {
             info = "[RUSH] $info"
             tvInfo.setTextColor(ContextCompat.getColor(this, R.color.warning))
+        }
+        if (order.estimatedDeliveryDate > 0L) {
+            info += "\nEstimated delivery: ${DeliveryEta.label(order.estimatedDeliveryDate, order.estimatedDeliveryTimeZoneId)}"
         }
         tvInfo.text = info
         tvPayment.text = "Payment: ${order.paymentMethod}${if(order.isPaid) " (PAID)" else ""}"

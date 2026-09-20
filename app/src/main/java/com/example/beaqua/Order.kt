@@ -51,6 +51,8 @@ data class Order(
 
     var subscriptionId: String = "",
     var scheduledDeliveryDate: Long = 0L,
+    var estimatedDeliveryDate: Long = 0L,
+    var estimatedDeliveryTimeZoneId: String = DeliveryEta.DEFAULT_TIME_ZONE_ID,
     var offeringType: String = OFFERING_PURCHASE,
     var refillServiceId: String = "",
     var refillInstructions: String = "",

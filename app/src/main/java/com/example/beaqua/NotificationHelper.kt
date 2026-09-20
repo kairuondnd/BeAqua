@@ -32,7 +32,8 @@ object NotificationHelper {
         context: Context,
         title: String,
         message: String,
-        intent: Intent? = null
+        intent: Intent? = null,
+        notificationId: Int = System.currentTimeMillis().toInt()
     ): Boolean {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return false
@@ -49,12 +50,14 @@ object NotificationHelper {
             .setSmallIcon(R.drawable.beaqua) // Ensure this icon exists
             .setContentTitle(title)
             .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
 
         return try {
-            manager.notify(System.currentTimeMillis().toInt(), builder.build())
+            manager.notify(notificationId, builder.build())
             true
         } catch (_: SecurityException) {
             false

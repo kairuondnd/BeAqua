@@ -61,7 +61,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="Choose your bottles, quantity, and how many days between deliveries. Each delivery is paid by Cash on Delivery."
+                android:text="Review your delivery when reminded the day before. Edit until your station’s opening time on delivery day. Saved details are used automatically. Pay by Cash on Delivery."
                 android:textColor="#E6FFFFFF"
                 android:textSize="14sp" />
         </LinearLayout>

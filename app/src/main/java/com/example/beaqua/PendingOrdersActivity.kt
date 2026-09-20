@@ -145,8 +145,18 @@ class PendingOrdersActivity : AppCompatActivity() {
                 "Accepted" -> "Accepted (Preparing)"
                 else -> "Awaiting Confirmation"
             }
-            holder.tvSlot.text =
-                "Estimated delivery: ${order.deliveryTimeSlot}\nStatus: $statusDisplay"
+            holder.tvSlot.text = buildString {
+                append("Status: $statusDisplay")
+                if (order.estimatedDeliveryDate > 0L) {
+                    append("\nEstimated delivery: ")
+                    append(
+                        DeliveryEta.label(
+                            order.estimatedDeliveryDate,
+                            order.estimatedDeliveryTimeZoneId
+                        )
+                    )
+                }
+            }
 
             holder.tvStatusBadge.text = order.status.uppercase()
             holder.cvStatusBadge.visibility = View.VISIBLE

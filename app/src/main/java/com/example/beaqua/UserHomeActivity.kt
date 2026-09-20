@@ -42,8 +42,6 @@ class UserHomeActivity : AppCompatActivity() {
     
     // Side Nav Items
     private lateinit var navHome: LinearLayout
-    private lateinit var navCart: LinearLayout
-    private lateinit var navSubscriptions: LinearLayout
     private lateinit var navMessages: LinearLayout
     private lateinit var navHistory: LinearLayout
     private lateinit var navProfile: LinearLayout
@@ -53,6 +51,9 @@ class UserHomeActivity : AppCompatActivity() {
     private lateinit var tvNavUserRole: TextView
 
     private var currentUser: User? = null
+    private var cartListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var latestCartSnapshot: com.google.firebase.firestore.QuerySnapshot? = null
+    private var orderStatusListener: com.google.firebase.firestore.ListenerRegistration? = null
     private val inventoryProducts = mutableListOf<Product>()
     private val NOTIFICATION_PERMISSION_CODE = 1002
     private var accountNotificationListener: com.google.firebase.firestore.ListenerRegistration? = null
@@ -84,6 +85,7 @@ class UserHomeActivity : AppCompatActivity() {
 
         drawerLayout = findViewById(R.id.drawerLayout)
         contentFrame = findViewById(R.id.userContentFrame)
+        findViewById<ImageButton>(R.id.btnHeaderCart).setOnClickListener { openCart() }
         
         val btnMenu = findViewById<ImageButton>(R.id.btnMenu)
         btnMenu.setOnClickListener {
@@ -91,8 +93,6 @@ class UserHomeActivity : AppCompatActivity() {
         }
 
         navHome = findViewById(R.id.navUserHome)
-        navCart = findViewById(R.id.navUserCart)
-        navSubscriptions = findViewById(R.id.navUserSubscriptions)
         navMessages = findViewById(R.id.navUserMessages)
         navHistory = findViewById(R.id.navUserHistory)
         navProfile = findViewById(R.id.navUserProfile)
@@ -105,6 +105,10 @@ class UserHomeActivity : AppCompatActivity() {
         if (username.isNotEmpty()) {
             FirebaseHelper.getUser(username).addOnSuccessListener { document ->
                 currentUser = document.toObject(User::class.java)
+                currentUser?.let { DeliveryReminderWorker.start(this, it.username) }
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    listenForCartCount()
+                }
                 currentUser?.let {
                     tvNavUserName.text = it.name
                     tvNavUserRole.text = it.accountType
@@ -114,8 +118,7 @@ class UserHomeActivity : AppCompatActivity() {
                 listenForOrderStatusChanges() 
                 checkNotificationPermission()
                 startAccountNotificationListenerIfAllowed()
-                FirebaseHelper.processDueSubscriptions()
-                FirebaseHelper.cancelExpiredPendingOrders()
+                SubscriptionOrderWorker.bindAccount(this, username, stationOwner = false)
             }.addOnFailureListener {
                 Toast.makeText(this, "Failed to load user data", Toast.LENGTH_SHORT).show()
                 finish()
@@ -161,19 +164,67 @@ class UserHomeActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        listenForCartCount()
+    }
+
+    override fun onStop() {
+        cartListener?.remove()
+        cartListener = null
+        latestCartSnapshot = null
+        super.onStop()
+    }
+
+    private fun listenForCartCount() {
+        val user = currentUser ?: return
+        cartListener?.remove()
+        cartListener = FirebaseHelper.cartCollection
+            .whereEqualTo("customerUsername", user.username)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null || snapshot == null) {
+                    latestCartSnapshot = null
+                    return@addSnapshotListener
+                }
+                latestCartSnapshot = if (snapshot.metadata.isFromCache) null else snapshot
+                val count = snapshot.documents.sumOf {
+                    (it.getLong("quantity") ?: 0L).coerceAtLeast(0L)
+                }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                val badge = findViewById<TextView>(R.id.tvCartBadge)
+                badge.visibility = if (count > 0) View.VISIBLE else View.GONE
+                badge.text = if (count > 99) getString(R.string.cart_badge_overflow) else count.toString()
+                findViewById<ImageButton>(R.id.btnHeaderCart).contentDescription =
+                    resources.getQuantityString(R.plurals.cart_item_count, count, count)
+            }
+    }
+
+    private fun cartSnapshotForAdd(username: String): com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> {
+        val snapshot = latestCartSnapshot
+        return if (snapshot != null && username == currentUser?.username) {
+            com.google.android.gms.tasks.Tasks.forResult(snapshot)
+        } else FirebaseHelper.getCartItems(username)
+    }
+
+    private fun openCart() {
+        val user = currentUser ?: return
+        startActivity(Intent(this, CartActivity::class.java).putExtra("USERNAME", user.username))
+    }
+
     override fun onDestroy() {
+        orderStatusListener?.remove()
         accountNotificationListener?.remove()
         super.onDestroy()
     }
 
     private fun listenForOrderStatusChanges() {
         currentUser?.let { user ->
-            FirebaseHelper.ordersCollection
+            orderStatusListener?.remove()
+            orderStatusListener = FirebaseHelper.ordersCollection
                 .whereEqualTo("customerName", user.username)
                 .addSnapshotListener { snapshots, e ->
-                    if (e != null) return@addSnapshotListener
+                    if (e != null || snapshots == null) return@addSnapshotListener
                     
-                    for (dc in snapshots!!.documentChanges) {
+                    for (dc in snapshots.documentChanges) {
                         if (dc.type == DocumentChange.Type.MODIFIED) {
                             val order = dc.document.toObject(Order::class.java)
                             if (order != null) {
@@ -189,7 +240,19 @@ class UserHomeActivity : AppCompatActivity() {
                                 }
                                 
                                 val message = when (status) {
-                                    "Accepted" -> "Your order for ${order.productName} has been accepted and is being prepared."
+                                    "Accepted" -> buildString {
+                                        append("Your order for ${order.productName} has been accepted and is being prepared.")
+                                        if (order.estimatedDeliveryDate > 0L) {
+                                            append(" Estimated delivery: ")
+                                            append(
+                                                DeliveryEta.label(
+                                                    order.estimatedDeliveryDate,
+                                                    order.estimatedDeliveryTimeZoneId
+                                                )
+                                            )
+                                            append('.')
+                                        }
+                                    }
                                     "Delivered" -> "Your order for ${order.productName} has been delivered. Enjoy!"
                                     "Rejected" -> "Sorry, your order for ${order.productName} was rejected by the station."
                                     "Cancelled" -> order.cancellationReason.ifBlank {
@@ -216,20 +279,6 @@ class UserHomeActivity : AppCompatActivity() {
     private fun setupSideNav() {
         navHome.setOnClickListener {
             showStations()
-            drawerLayout.closeDrawer(GravityCompat.END)
-        }
-
-        navCart.setOnClickListener {
-            currentUser?.let { user ->
-                val intent = Intent(this, CartActivity::class.java)
-                intent.putExtra("USERNAME", user.username)
-                startActivity(intent)
-            }
-            drawerLayout.closeDrawer(GravityCompat.END)
-        }
-
-        navSubscriptions.setOnClickListener {
-            openSubscriptions()
             drawerLayout.closeDrawer(GravityCompat.END)
         }
 
@@ -261,6 +310,7 @@ class UserHomeActivity : AppCompatActivity() {
         }
 
         btnLogout.setOnClickListener {
+            DeliveryReminderWorker.clear(this)
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
@@ -327,10 +377,6 @@ class UserHomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun calculateEta(settings: EtaSettings): String {
-        return settings.deliveryEstimateAt()
-    }
-
     private fun showStationInventory(station: User) {
         contentFrame.removeAllViews()
         val inventoryView = LayoutInflater.from(this).inflate(R.layout.station_inventory_content, contentFrame, false)
@@ -347,8 +393,33 @@ class UserHomeActivity : AppCompatActivity() {
         val rvProducts = inventoryView.findViewById<RecyclerView>(R.id.rvStationProducts)
 
         tvStationName.text = station.name
-        inventoryView.findViewById<MaterialButton>(R.id.btnStationMembership).setOnClickListener {
-            showStationDeliveryOptions(station)
+        val recurringCheck = inventoryView.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.checkRecurringDelivery)
+        val recurringForm = inventoryView.findViewById<LinearLayout>(R.id.recurringDeliveryForm)
+        val recurringHint = inventoryView.findViewById<TextView>(R.id.tvRecurringDeliveryHint)
+        recurringCheck.setOnCheckedChangeListener { _, checked ->
+            recurringForm.visibility = if (checked) View.VISIBLE else View.GONE
+            recurringHint.visibility = if (checked) View.GONE else View.VISIBLE
+            recurringCheck.setTextColor(ContextCompat.getColor(this,
+                if (checked) R.color.primary else R.color.text_secondary))
+            if (checked && recurringForm.childCount == 0) {
+                val customer = currentUser ?: return@setOnCheckedChangeListener
+                recurringForm.addView(TextView(this).apply {
+                    setText(R.string.recurring_delivery_loading)
+                    setPadding(24, 16, 24, 24)
+                })
+                RecurringDeliveryEditor.show(this, customer, station,
+                    inlineContainer = recurringForm,
+                    onSavingChanged = { recurringCheck.isEnabled = !it },
+                    onCancelled = {
+                        recurringForm.removeAllViews()
+                        recurringCheck.isChecked = false
+                    },
+                    onSaved = {
+                        recurringForm.removeAllViews()
+                        recurringCheck.isChecked = false
+                        Toast.makeText(this, "Recurring delivery saved", Toast.LENGTH_LONG).show()
+                    })
+            }
         }
         val stationIsOpen = station.isStationOpen()
         tvOpenStatus.text = station.stationStatusLabel()
@@ -392,14 +463,12 @@ class UserHomeActivity : AppCompatActivity() {
                     }
 
                     currentUser?.let { customer ->
-                        val eta = calculateEta(station.etaSettings)
                         val cartItem = CartItem(
                             productId = product.id,
                             productName = product.name,
                             productPrice = product.price,
                             quantity = quantity,
                             containerType = product.name,
-                            deliveryTimeSlot = eta,
                             stationOwnerUsername = station.username,
                             stationName = station.name,
                             customerUsername = customer.username,
@@ -407,7 +476,8 @@ class UserHomeActivity : AppCompatActivity() {
                         )
                         
                         // Check if cart already has items
-                        FirebaseHelper.getCartItems(customer.username).addOnSuccessListener { cartSnapshot ->
+                        Toast.makeText(this, "Adding to cart…", Toast.LENGTH_SHORT).show()
+                        cartSnapshotForAdd(customer.username).addOnSuccessListener { cartSnapshot ->
                             val existingItems = cartSnapshot.toObjects(CartItem::class.java)
                             
                             if (existingItems.isNotEmpty() && existingItems[0].stationOwnerUsername != station.username) {
@@ -435,20 +505,20 @@ class UserHomeActivity : AppCompatActivity() {
                                 val duplicateItem = existingItems.find { 
                                     it.offeringType != OFFERING_REFILL &&
                                     it.productId == product.id &&
-                                    it.containerType == product.name &&
-                                    it.deliveryTimeSlot == eta
+                                    it.containerType == product.name
                                 }
 
                                 if (duplicateItem != null) {
-                                    duplicateItem.quantity += quantity
-                                    FirebaseHelper.updateCartItem(duplicateItem).addOnSuccessListener {
+                                    FirebaseHelper.incrementCartItem(duplicateItem, quantity).addOnSuccessListener {
                                         Toast.makeText(this, "Quantity updated for ${product.name}", Toast.LENGTH_SHORT).show()
+                                    }.addOnFailureListener {
+                                        Toast.makeText(this, "Could not update cart. Try again.", Toast.LENGTH_SHORT).show()
                                     }
                                 } else {
                                     FirebaseHelper.addToCart(cartItem).addOnSuccessListener {
                                         Toast.makeText(
                                             this,
-                                            "${product.name} added • Estimated delivery: $eta",
+                                            "${product.name} added to cart",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }.addOnFailureListener {
@@ -577,7 +647,6 @@ class UserHomeActivity : AppCompatActivity() {
     ) {
         if (!ensureStationOpen(station)) return
         val customer = currentUser ?: return
-        val eta = calculateEta(station.etaSettings)
         val refillId = "REFILL_${station.username}"
         val cartItem = CartItem(
             productId = refillId,
@@ -585,7 +654,6 @@ class UserHomeActivity : AppCompatActivity() {
             productPrice = station.refillFee,
             quantity = quantity,
             containerType = "Customer-owned container",
-            deliveryTimeSlot = eta,
             stationOwnerUsername = station.username,
             stationName = station.name,
             customerUsername = customer.username,
@@ -595,7 +663,8 @@ class UserHomeActivity : AppCompatActivity() {
             emptyContainerCount = quantity
         )
 
-        FirebaseHelper.getCartItems(customer.username)
+        Toast.makeText(this, "Adding refill to cart…", Toast.LENGTH_SHORT).show()
+        cartSnapshotForAdd(customer.username)
             .addOnSuccessListener { cartSnapshot ->
                 val existingItems = cartSnapshot.toObjects(CartItem::class.java)
                 if (
@@ -624,15 +693,13 @@ class UserHomeActivity : AppCompatActivity() {
                 val duplicate = existingItems.find {
                     it.offeringType == OFFERING_REFILL &&
                         it.stationOwnerUsername == station.username &&
-                        it.refillInstructions == instructions &&
-                        it.deliveryTimeSlot == eta
+                        it.refillInstructions == instructions
                 }
                 if (duplicate != null) {
-                    duplicate.quantity += quantity
-                    duplicate.emptyContainerCount = duplicate.quantity
-                    duplicate.totalPrice = duplicate.productPrice * duplicate.quantity
-                    FirebaseHelper.updateCartItem(duplicate).addOnSuccessListener {
+                    FirebaseHelper.incrementCartItem(duplicate, quantity).addOnSuccessListener {
                         Toast.makeText(this, "Refill quantity updated", Toast.LENGTH_SHORT).show()
+                    }.addOnFailureListener {
+                        Toast.makeText(this, "Could not update refill. Try again.", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     FirebaseHelper.addToCart(cartItem)
@@ -665,50 +732,6 @@ class UserHomeActivity : AppCompatActivity() {
         val intent = Intent(this, SubscriptionActivity::class.java)
         intent.putExtra("USERNAME", user.username)
         startActivity(intent)
-    }
-
-    private fun showStationDeliveryOptions(station: User) {
-        AlertDialog.Builder(this)
-            .setTitle("${station.name} automated deliveries")
-            .setItems(arrayOf("Add automated delivery", "Manage automated deliveries")) { _, choice ->
-                if (choice == 1) {
-                    val intent = Intent(this, SubscriptionActivity::class.java)
-                        .putExtra("USERNAME", currentUser?.username)
-                        .putExtra("STATION_USERNAME", station.username)
-                    startActivity(intent)
-                } else {
-                    FirebaseHelper.getProductsByStation(station.username)
-                        .addOnSuccessListener { snapshot ->
-                            val products = snapshot.toObjects(Product::class.java)
-                            val labels = products.map { it.name }.toMutableList()
-                            if (station.refillServiceEnabled && station.refillFee > 0.0) {
-                                labels.add("Water refill (your containers)")
-                            }
-                            if (labels.isEmpty()) {
-                                Toast.makeText(this, "No deliveries are currently offered", Toast.LENGTH_SHORT).show()
-                                return@addOnSuccessListener
-                            }
-                            AlertDialog.Builder(this)
-                                .setTitle("Choose what to deliver")
-                                .setItems(labels.toTypedArray()) { _, index ->
-                                    if (index == products.size) {
-                                        showRefillInstructionsDialog(station, 1, subscribe = true)
-                                    } else {
-                                        val product = products[index]
-                                        showSubscriptionDialog(station, product.id, product.name,
-                                            product.price, 1, product.name)
-                                    }
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .show()
-                        }
-                        .addOnFailureListener {
-                            Toast.makeText(this, "Could not load station offerings", Toast.LENGTH_SHORT).show()
-                        }
-                }
-            }
-            .setNegativeButton("Close", null)
-            .show()
     }
 
     private fun withDeliveryAccess(station: User, onActive: () -> Unit) { onActive() }

@@ -68,9 +68,13 @@ class UserHistoryAdapter(
         holder.tvOrderDate.text = sdf.format(date)
 
         holder.tvOrderDetails.text =
-            "${order.containerType} | Estimated delivery: ${order.deliveryTimeSlot}" +
+            order.containerType +
             if (order.isRefill() && order.refillInstructions.isNotBlank()) {
                 "\nNotes: ${order.refillInstructions}"
+            } else {
+                ""
+            } + if (order.estimatedDeliveryDate > 0L) {
+                "\nEstimated delivery: ${DeliveryEta.label(order.estimatedDeliveryDate, order.estimatedDeliveryTimeZoneId)}"
             } else {
                 ""
             }

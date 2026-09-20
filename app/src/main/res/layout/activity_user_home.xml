@@ -27,6 +27,7 @@
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_toStartOf="@+id/headerCartContainer"
                     android:layout_alignParentStart="true"
                     android:layout_centerVertical="true"
                     android:gravity="center_vertical"
@@ -49,6 +50,41 @@
                         android:textStyle="bold"
                         android:letterSpacing="-0.01"/>
                 </LinearLayout>
+
+                <FrameLayout
+                    android:id="@id/headerCartContainer"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_toStartOf="@+id/btnMenuContainer"
+                    android:layout_marginEnd="8dp"
+                    android:layout_centerVertical="true">
+
+                    <ImageButton
+                        android:id="@+id/btnHeaderCart"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/open_cart"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_nav_cart"
+                        app:tint="@color/text_primary" />
+
+                    <TextView
+                        android:id="@+id/tvCartBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="top|end"
+                        android:minWidth="20dp"
+                        android:minHeight="20dp"
+                        android:paddingHorizontal="4dp"
+                        android:gravity="center"
+                        android:background="@drawable/bg_cart_badge"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:importantForAccessibility="no"
+                        android:visibility="gone" />
+                </FrameLayout>
 
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/btnMenuContainer"
@@ -207,62 +243,6 @@
                         android:text="Home"
                         android:textColor="@color/primary"
                         android:textStyle="bold"
-                        android:textSize="15sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/navUserCart"
-                    android:layout_width="match_parent"
-                    android:layout_height="60dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="10dp"
-                    android:layout_marginBottom="4dp"
-                    android:background="@drawable/bg_nav_item"
-                    android:clickable="true"
-                    android:focusable="true">
-                    <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:background="@drawable/bg_nav_icon"
-                        android:padding="9dp"
-                        android:src="@drawable/ic_nav_cart"
-                        app:tint="@color/text_secondary" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:text="My Cart"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/navUserSubscriptions"
-                    android:layout_width="match_parent"
-                    android:layout_height="60dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="10dp"
-                    android:layout_marginBottom="4dp"
-                    android:background="@drawable/bg_nav_item"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:background="@drawable/bg_nav_icon"
-                        android:padding="9dp"
-                        android:src="@drawable/ic_nav_premium"
-                        app:tint="@color/text_secondary" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:text="Automated Deliveries"
-                        android:textColor="@color/text_primary"
                         android:textSize="15sp" />
                 </LinearLayout>
 

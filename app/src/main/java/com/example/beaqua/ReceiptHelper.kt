@@ -68,6 +68,15 @@ object ReceiptHelper {
                 y += 20f
                 val dateStr = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(order.timestamp))
                 canvas.drawText("Date: $dateStr", 20f, y, paint)
+                if (order.estimatedDeliveryDate > 0L) {
+                    y += 20f
+                    canvas.drawText(
+                        "Estimated delivery: ${DeliveryEta.label(order.estimatedDeliveryDate, order.estimatedDeliveryTimeZoneId)}",
+                        20f,
+                        y,
+                        paint
+                    )
+                }
                 
                 y += 30f
                 paint.isFakeBoldText = true

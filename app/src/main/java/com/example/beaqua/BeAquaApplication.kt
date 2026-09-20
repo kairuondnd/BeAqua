@@ -22,8 +22,8 @@ class BeAquaApplication : Application() {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = PeriodicWorkRequestBuilder<SubscriptionOrderWorker>(
-            1,
-            TimeUnit.HOURS
+            15,
+            TimeUnit.MINUTES
         )
             .setConstraints(constraints)
             .build()

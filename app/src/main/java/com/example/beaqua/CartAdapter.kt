@@ -37,12 +37,10 @@ class CartAdapter(
         holder.tvPrice.text = "₱${String.format("%.2f", item.productPrice)}"
         holder.tvStation.text = item.stationName
         holder.tvDetails.text = if (item.offeringType == OFFERING_REFILL) {
-            "${item.emptyContainerCount.coerceAtLeast(item.quantity)} empty containers\n" +
-                "Estimated delivery: ${item.deliveryTimeSlot}" +
+            "${item.emptyContainerCount.coerceAtLeast(item.quantity)} empty containers" +
                 if (item.refillInstructions.isBlank()) "" else "\n${item.refillInstructions}"
         } else {
-            "Qty: ${item.quantity} | ${item.containerType}\n" +
-                "Estimated delivery: ${item.deliveryTimeSlot}"
+            "Qty: ${item.quantity} | ${item.containerType}"
         }
 
         ContainerImageLoader.load(holder.imgProduct, item.imageUri)

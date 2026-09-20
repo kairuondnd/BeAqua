@@ -29,4 +29,13 @@
     <string name="select_month_year">Select Month and Year</string>
     <string name="successful_orders_format">%1$d Successful Orders</string>
     <string name="revenue_format">₱%1$.2f</string>
+    <string name="open_cart">Open cart</string>
+    <string name="cart_badge_overflow">99+</string>
+    <plurals name="cart_item_count">
+        <item quantity="one">Open cart, %1$d item</item>
+        <item quantity="other">Open cart, %1$d items</item>
+    </plurals>
+    <string name="recurring_delivery_option">Make this a recurring delivery</string>
+    <string name="recurring_delivery_hint">Check to choose your items, quantity and delivery schedule.</string>
+    <string name="recurring_delivery_loading">Loading delivery options…</string>
 </resources>
