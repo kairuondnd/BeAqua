@@ -1,7 +1,6 @@
 package com.example.beaqua
 
 import com.google.firebase.firestore.IgnoreExtraProperties
-import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
@@ -32,7 +31,9 @@ data class User(
     var refillFee: Double = 0.0,
     var premiumPrice: Double = 99.0,
     var gcashQrUrl: String = "",
-    var operatingHours: OperatingHours = OperatingHours()
+    var operatingHours: OperatingHours = OperatingHours(),
+    var privacyNoticeVersion: String = "",
+    var privacyNoticeAcknowledgedAt: Long = 0L
 ) {
     companion object {
         const val KYC_NOT_REQUIRED = "NOT_REQUIRED"
@@ -114,15 +115,6 @@ private fun String.toMinutesOrNull(): Int? {
     val minute = pieces[1].toIntOrNull() ?: return null
     if (hour !in 0..23 || minute !in 0..59) return null
     return hour * 60 + minute
-}
-
-private fun String.toDisplayTime(): String {
-    val minutes = toMinutesOrNull() ?: return this
-    val calendar = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, minutes / 60)
-        set(Calendar.MINUTE, minutes % 60)
-    }
-    return SimpleDateFormat("h:mm a", Locale.getDefault()).format(calendar.time)
 }
 
 data class EtaSettings(

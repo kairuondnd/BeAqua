@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_notice_title">Privacy Notice</string>
+    <string name="privacy_notice_read">Read Privacy Notice</string>
+    <string name="privacy_signup_summary">BeAqua uses your account details and delivery location to manage water orders. Station owners also submit business details and permits for review. Read how your information is used before continuing.</string>
+    <string name="privacy_acknowledgment">I have read and understood the BeAqua Privacy Notice.</string>
+    <string name="privacy_acknowledgment_required">Please read and acknowledge the Privacy Notice before creating an account.</string>
+    <string name="privacy_acknowledgment_note">This acknowledges the notice. It does not grant permission for unrelated uses of your information.</string>
+    <string name="privacy_notice_draft">Draft notice — operator contact, retention periods and legal bases are awaiting confirmation. Please request these details from the BeAqua operator before submitting personal information.</string>
+    <!-- Populate these only with details confirmed by the app operator. -->
+    <string name="privacy_operator" translatable="false"></string>
+    <string name="privacy_contact_email" translatable="false"></string>
+    <string name="privacy_retention_policy" translatable="false"></string>
+    <string name="privacy_processing_basis" translatable="false"></string>
+    <string name="privacy_data_heading">Information used by BeAqua</string>
+    <string name="privacy_data_body">For customers: name, username, login credentials, delivery address and its map coordinates, and an optional contact number. During use, the app stores cart items, orders, recurring schedules, payment method and status, receipts, messages, ratings and feedback.\n\nFor station owners: business name, proprietor name, business contact number and email, business address and map coordinates, login credentials, submitted permits and their review status. Station listings also include products, prices, hours, fees, images and any uploaded GCash receiving QR.</string>
+    <string name="privacy_purpose_heading">Why this information is used</string>
+    <string name="privacy_purpose_body">To create and manage accounts, find water stations, deliver orders, manage recurring deliveries, show receipts and order updates, provide customer–station chat, display feedback and help administrators review station applications. A recurring schedule you enable can create future orders at the station opening-time cutoff.</string>
+    <string name="privacy_sharing_heading">Who receives information</string>
+    <string name="privacy_sharing_body">The water station handling an order receives the customer identifier, delivery address and map coordinates, ordered items and order details needed to fulfil it. Chat participants receive messages sent to them. Approved station listings and submitted feedback are shown to other app users. Administrators can manage user records and review submitted station permits.\n\nGoogle Firebase services store app records and uploaded content. Mapbox provides maps and address search; map coordinates and searches are sent to Mapbox when those features are used. Information you enter while paying through GCash is handled by that service; BeAqua records the selected payment method and payment status.</string>
+    <string name="privacy_choices_heading">Your choices and requests</string>
+    <string name="privacy_choices_body">You can leave signup without creating an account. Required fields are needed to complete signup; a customer contact number is optional. You can select an address on the map without granting device-location permission. Location and notification permissions are controlled in Android Settings.\n\nYou may request access to or correction of your personal information, and request deletion or object to processing where applicable. If processing relies on consent, you may withdraw that consent. These rights are subject to applicable conditions and do not mean every record can always be deleted immediately. You may also raise a complaint with the Philippine National Privacy Commission.</string>
+    <string name="privacy_retention_heading">Retention and deletion</string>
+    <string name="privacy_retention_pending">A retention period has not yet been confirmed by the operator. This app does not currently provide automatic account-data deletion. Deleting a user record alone does not remove all related orders, chats or uploaded documents.</string>
+    <string name="privacy_contact_heading">Operator and privacy contact</string>
+    <string name="privacy_contact_pending">The operator identity and privacy email have not yet been supplied for this draft. Obtain these details from the person or organization providing BeAqua before submitting personal information.</string>
+    <string name="privacy_basis_heading">Basis for processing</string>
+    <string name="privacy_basis_pending">The operator must confirm the applicable legal basis for each use of personal information. Acknowledging this notice is not blanket consent and does not waive your privacy rights.</string>
+</resources>

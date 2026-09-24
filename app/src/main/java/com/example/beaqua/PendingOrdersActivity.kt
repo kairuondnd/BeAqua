@@ -147,6 +147,9 @@ class PendingOrdersActivity : AppCompatActivity() {
             }
             holder.tvSlot.text = buildString {
                 append("Status: $statusDisplay")
+                if (order.isSubscriptionOrder && order.scheduledDeliveryDate > 0L) {
+                    append("\n${order.recurringDeliveryLabel()}")
+                }
                 if (order.estimatedDeliveryDate > 0L) {
                     append("\nEstimated delivery: ")
                     append(
@@ -161,7 +164,7 @@ class PendingOrdersActivity : AppCompatActivity() {
             holder.tvStatusBadge.text = order.status.uppercase()
             holder.cvStatusBadge.visibility = View.VISIBLE
 
-            if (order.isPaid) {
+            if (order.isPaid && order.deliveryReceipt != null) {
                 holder.btnPrintReceipt.visibility = View.VISIBLE
                 holder.btnPrintReceipt.setOnClickListener { onPrintReceipt(order) }
             } else {

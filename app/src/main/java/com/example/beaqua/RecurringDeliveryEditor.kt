@@ -33,7 +33,7 @@ object RecurringDeliveryEditor {
         existing: WeeklySubscription? = null,
         preferredProductId: String = "",
         initialQuantity: Int = 1,
-        checkoutItem: CartItem? = null,
+        checkoutItems: List<CartItem> = emptyList(),
         inlineContainer: LinearLayout? = null,
         onSavingChanged: (Boolean) -> Unit = {},
         onCancelled: () -> Unit = {},
@@ -44,7 +44,11 @@ object RecurringDeliveryEditor {
             onCancelled()
             return
         }
-        if (checkoutItem?.offeringType == OFFERING_REFILL) {
+        val checkoutQuantities = checkoutItems
+            .filter { it.offeringType == OFFERING_PURCHASE && it.stationOwnerUsername == station.username }
+            .groupBy { it.productId }
+            .mapValues { (_, items) -> items.sumOf { it.quantity } }
+        if (checkoutItems.isNotEmpty() && checkoutQuantities.isEmpty()) {
             Toast.makeText(
                 context,
                 "Recurring delivery is available for station sale items only",
@@ -95,7 +99,7 @@ object RecurringDeliveryEditor {
             }
 
             val savedItems = existing?.deliveryItems().orEmpty().associateBy { it.productId }
-            val preferredId = checkoutItem?.productId
+            val preferredId = checkoutQuantities.keys.firstOrNull()
                 ?: preferredProductId.takeIf { it.isNotBlank() }
                 ?: existing?.productId
             val defaultProductId = preferredId
@@ -121,6 +125,8 @@ object RecurringDeliveryEditor {
                 val savedItem = savedItems[product.id]
                 val checked = if (existing != null && savedItems.isNotEmpty()) {
                     savedItem != null
+                } else if (checkoutQuantities.isNotEmpty()) {
+                    product.id in checkoutQuantities
                 } else {
                     product.id == defaultProductId
                 }
@@ -134,7 +140,7 @@ object RecurringDeliveryEditor {
                     setText(
                         when {
                             savedItem != null -> savedItem.quantity
-                            checkoutItem?.productId == product.id -> checkoutItem.quantity
+                            product.id in checkoutQuantities -> checkoutQuantities.getValue(product.id)
                             product.id == defaultProductId -> initialQuantity
                             else -> 1
                         }.toString()
@@ -315,7 +321,7 @@ object RecurringDeliveryEditor {
                     emptyContainerCount = 0
                 )
 
-                if (existing != null || checkoutItem != null) {
+                if (existing != null || checkoutItems.isNotEmpty()) {
                     persist(delivery, orderToday = false)
                     return@setOnClickListener
                 }

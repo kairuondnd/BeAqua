@@ -34,14 +34,14 @@
         </provider>
 
         <activity
+            android:name=".ReceiptActivity"
+            android:exported="false" />
+        <activity
             android:name=".CartActivity"
             android:exported="false"
             android:launchMode="singleTop" />
         <activity
             android:name=".SubscriptionActivity"
-            android:exported="false" />
-        <activity
-            android:name=".HotspotsMapActivity"
             android:exported="false" />
         <activity
             android:name=".RevenueActivity"
@@ -84,6 +84,9 @@
             android:exported="false" />
         <activity
             android:name=".StationOwnerActivity"
+            android:exported="false" />
+        <activity
+            android:name=".PrivacyNoticeActivity"
             android:exported="false" />
         <activity
             android:name=".SignupActivity"

@@ -51,12 +51,16 @@ data class Order(
 
     var subscriptionId: String = "",
     var scheduledDeliveryDate: Long = 0L,
+    var scheduledDeliveryTimeZoneId: String = DeliveryEta.DEFAULT_TIME_ZONE_ID,
+    var recurringOrderIds: List<String> = emptyList(),
     var estimatedDeliveryDate: Long = 0L,
     var estimatedDeliveryTimeZoneId: String = DeliveryEta.DEFAULT_TIME_ZONE_ID,
     var offeringType: String = OFFERING_PURCHASE,
     var refillServiceId: String = "",
     var refillInstructions: String = "",
-    var emptyContainerCount: Int = 0
+    var emptyContainerCount: Int = 0,
+    var checkoutId: String = "",
+    var deliveryReceipt: DeliveryReceipt? = null
 )
 
 fun Order.isRefill(): Boolean = offeringType == OFFERING_REFILL

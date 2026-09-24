@@ -244,6 +244,7 @@ object FirebaseHelper {
 
     /** Atomically verifies that listed containers still exist and creates orders. */
     fun placeOrders(user: User, cartItems: List<CartItem>, selectedPayment: String, isPaid: Boolean, isRush: Boolean, rushOrderFee: Double, deliveryFee: Double): Task<String?> {
+        val checkoutId = java.util.UUID.randomUUID().toString()
         return db.runTransaction { transaction ->
             if (cartItems.isEmpty()) throw IllegalStateException("The cart is empty")
             require(cartItems.map { it.id }.distinct().size == cartItems.size) { "Duplicate cart items. Refresh your cart." }
@@ -347,6 +348,7 @@ object FirebaseHelper {
                 }
                 val order = Order(
                     id = orderId,
+                    checkoutId = checkoutId,
                     productId = item.productId,
                     productName = item.productName,
                     imageUri = item.imageUri,
@@ -417,7 +419,15 @@ object FirebaseHelper {
         estimatedDeliveryTimeZoneId: String,
         markPaid: Boolean = false
     ): Task<Void> {
-        require(orderId.isNotBlank()) { "Order ID is required" }
+        return acceptOrders(listOf(orderId), estimatedDeliveryDate, estimatedDeliveryTimeZoneId, markPaid)
+    }
+
+    fun acceptOrders(
+        orderIds: List<String>,
+        estimatedDeliveryDate: Long,
+        estimatedDeliveryTimeZoneId: String,
+        markPaid: Boolean = false
+    ): Task<Void> {
         require(
             DeliveryEta.isTodayOrFuture(
                 estimatedDeliveryDate,
@@ -425,13 +435,7 @@ object FirebaseHelper {
             )
         ) { "Delivery ETA must be today or a future date" }
 
-        val orderReference = ordersCollection.document(orderId)
-        return db.runTransaction<Void> { transaction ->
-            val order = transaction.get(orderReference).toObject(Order::class.java)
-                ?: throw IllegalStateException("Order no longer exists")
-            check(order.status == "Pending") { "Only pending orders can be accepted" }
-
-            val updates = mutableMapOf<String, Any>(
+        val updates = mutableMapOf<String, Any>(
                 "status" to "Accepted",
                 "estimatedDeliveryDate" to DeliveryEta.normalize(
                     estimatedDeliveryDate,
@@ -439,9 +443,89 @@ object FirebaseHelper {
                 ),
                 "estimatedDeliveryTimeZoneId" to estimatedDeliveryTimeZoneId
             )
-            if (markPaid) updates["isPaid"] = true
-            transaction.update(orderReference, updates)
+        if (markPaid) updates["isPaid"] = true
+        return updateCheckoutOrders(orderIds, "Pending", updates)
+    }
+
+    fun updateOrderGroupStatus(orderIds: List<String>, status: String): Task<Void> {
+        require(status == "Rejected" || status == "Delivered")
+        val updates = mutableMapOf<String, Any>("status" to status)
+        if (status == "Delivered") updates["isPaid"] = true
+        return updateCheckoutOrders(orderIds, if (status == "Rejected") "Pending" else "Accepted", updates)
+    }
+
+    private fun updateCheckoutOrders(
+        orderIds: List<String>, expectedStatus: String, updates: Map<String, Any>,
+        stationUsername: String? = null
+    ): Task<Void> {
+        require(orderIds.isNotEmpty() && orderIds.all { it.isNotBlank() }) { "Order IDs are required" }
+        val references = orderIds.distinct().map { ordersCollection.document(it) }
+        return db.runTransaction<Void> { transaction ->
+            // Read every item first so concurrent changes cannot partially update a checkout.
+            val orders = references.map { reference ->
+                val order = transaction.get(reference).toObject(Order::class.java)
+                    ?: error("An order item no longer exists. Refresh and try again.")
+                order.id = reference.id
+                if (stationUsername != null) {
+                    check(order.stationOwnerUsername == stationUsername) { "This order belongs to another station." }
+                }
+                check(order.status == expectedStatus) { "Order status changed. Refresh and try again." }
+                if (expectedStatus == "Pending") {
+                    check(!order.isExpiredPending()) { "This order has expired. Refresh your orders." }
+                }
+                order
+            }
+            check(groupCheckoutOrders(orders).size == 1) { "These items do not belong to the same checkout." }
+            checkQueuedMembership(transaction, orders)
+            references.forEach { transaction.update(it, updates) }
             null
+        }
+    }
+
+    fun completeDeliveryWithReceipt(
+        orderIds: List<String>, stationUsername: String, items: List<DeliveryReceiptItem>
+    ): Task<DeliveryReceipt> {
+        require(stationUsername.isNotBlank()) { "Station is required." }
+        require(orderIds.isNotEmpty() && orderIds.all { it.isNotBlank() }) { "Order items are required." }
+        val receipt = DeliveryReceipt(
+            reference = orderIds.first(), issuedAt = System.currentTimeMillis(),
+            issuedBy = stationUsername, items = validateReceiptItems(items)
+        )
+        val references = orderIds.distinct().map { ordersCollection.document(it) }
+        return db.runTransaction { transaction ->
+            // Compare against the stored order and save the notification atomically with the receipt.
+            val orders = references.map { reference ->
+                val order = transaction.get(reference).toObject(Order::class.java)
+                    ?: error("An order item no longer exists. Refresh and try again.")
+                order.id = reference.id
+                check(order.stationOwnerUsername == stationUsername) { "This order belongs to another station." }
+                check(order.status == "Accepted") { "Order status changed. Refresh and try again." }
+                order
+            }
+            check(groupCheckoutOrders(orders).size == 1) { "These items do not belong to the same checkout." }
+            checkQueuedMembership(transaction, orders)
+            val confirmed = receipt.copy(itemsChanged = receiptItemsChanged(orders, receipt.items))
+            val notification = deliveryReceiptNotification(orders, confirmed)
+            references.forEach { transaction.update(it, mapOf(
+                "status" to "Delivered", "isPaid" to true, "deliveryReceipt" to confirmed
+            )) }
+            transaction.set(notificationsCollection.document(notification.id), notification)
+            confirmed
+        }
+    }
+
+    private fun checkQueuedMembership(transaction: com.google.firebase.firestore.Transaction, orders: List<Order>) {
+        val order = orders.first()
+        if (!order.isSubscriptionOrder || order.subscriptionId.isBlank()) return
+        check(orders.all { it.recurringOrderIds.isEmpty() || it.recurringOrderIds.toSet() == orders.map { item -> item.id }.toSet() }) {
+            "The customer changed the recurring items. Refresh the order before continuing."
+        }
+        val schedule = transaction.get(subscriptionsCollection.document(order.subscriptionId))
+            .toObject(WeeklySubscription::class.java) ?: return
+        if (schedule.queuedDeliveryAt == order.scheduledDeliveryDate && schedule.queuedOrderIds.isNotEmpty()) {
+            check(schedule.queuedOrderIds.toSet() == orders.map { it.id }.toSet()) {
+                "The customer changed the recurring items. Refresh the order before continuing."
+            }
         }
     }
 
@@ -480,7 +564,7 @@ object FirebaseHelper {
                 ?: return@runTransaction null
             if (!order.isExpiredPending(now)) return@runTransaction null
 
-            val reason = "Automatically cancelled because the station did not accept it within 24 hours."
+            val reason = "Automatically cancelled because the station did not accept it before the acceptance deadline."
             transaction.update(
                 orderRef,
                 mapOf(
@@ -502,7 +586,7 @@ object FirebaseHelper {
                         recipientUsername = order.customerName,
                         title = "Order automatically cancelled",
                         message = "Your ${order.productName} order from $stationName was cancelled " +
-                            "because it stayed pending for 24 hours.",
+                            "because its acceptance deadline passed.",
                         type = BeAquaNotification.TYPE_ORDER_AUTO_CANCELLED,
                         orderId = orderId,
                         createdAt = now
@@ -519,7 +603,7 @@ object FirebaseHelper {
                         recipientUsername = order.stationOwnerUsername,
                         title = "Pending order automatically cancelled",
                         message = "${order.customerName}'s ${order.productName} order was cancelled " +
-                            "because it was not accepted within 24 hours.",
+                            "because its acceptance deadline passed.",
                         type = BeAquaNotification.TYPE_ORDER_AUTO_CANCELLED,
                         orderId = orderId,
                         createdAt = now
@@ -604,6 +688,7 @@ object FirebaseHelper {
                     val orderId = firstOrderIds[index]
                     val order = Order(
                         id = orderId,
+                        checkoutId = firstOrderIds.first(),
                         productId = item.productId,
                         productName = product.name,
                         imageUri = product.imageUri,
@@ -656,13 +741,59 @@ object FirebaseHelper {
                 "This delivery has changed. Reopen it to edit the current schedule."
             }
             requireDeliveryEditable(transaction, existing)
-            validateDelivery(transaction, delivery)
+            val resources = validateDelivery(transaction, delivery)
+            val queued = readEditableQueuedOrders(transaction, existing)
+            val now = System.currentTimeMillis()
+            val keepQueued = existing.active && queued.isNotEmpty() &&
+                now >= DeliveryFinalization.queueAt(delivery.nextDeliveryAt, resources.station.operatingHours)
+            val revised = if (keepQueued) {
+                val template = queued.first()
+                val fee = resources.station.deliveryFee / resources.items.size
+                resources.items.map { item ->
+                    val product = resources.productsById.getValue(item.productId)
+                    val previous = queued.find { it.productId == item.productId }
+                    (previous ?: template).copy(
+                        id = previous?.id ?: OrderIdGenerator.generate(template.stationName),
+                        productId = item.productId, productName = product.name, imageUri = product.imageUri,
+                        quantity = item.quantity, containerType = product.name,
+                        status = "Pending", estimatedDeliveryDate = 0L,
+                        totalPrice = product.price * item.quantity + fee, deliveryFee = fee,
+                        scheduledDeliveryDate = delivery.nextDeliveryAt,
+                        scheduledDeliveryTimeZoneId = resources.station.operatingHours.timeZoneId,
+                        pendingExpiresAt = maxOf(now, DeliveryFinalization.cutoff(delivery.nextDeliveryAt,
+                            resources.station.operatingHours)) + PENDING_ORDER_TIMEOUT_MILLIS
+                    )
+                }
+            } else emptyList()
+            // Customer edits and the station's acceptance/delivery compete on these same documents.
+            queued.filter { old -> revised.none { it.id == old.id } }.forEach {
+                transaction.delete(ordersCollection.document(it.id))
+            }
+            revised.forEach { transaction.set(ordersCollection.document(it.id),
+                it.copy(recurringOrderIds = revised.map { line -> line.id })) }
             transaction.set(ref, delivery.copy(active = existing.active,
-                createdAt = existing.createdAt, lastOrderId = existing.lastOrderId,
-                lastOrderIds = existing.lastOrderIds,
+                createdAt = existing.createdAt, lastOrderId = revised.firstOrNull()?.id ?: existing.lastOrderId,
+                lastOrderIds = if (keepQueued) revised.map { it.id } else existing.lastOrderIds,
+                queuedDeliveryAt = if (keepQueued) delivery.nextDeliveryAt else 0L,
+                queuedOrderIds = revised.map { it.id },
                 lastOrderAt = existing.lastOrderAt, lastStatus = if (existing.active) "Scheduled" else "Paused"))
             null
+        }.addOnSuccessListener {
+            processDueSubscriptions(customerUsername = delivery.customerUsername)
         }
+    }
+
+    private fun readEditableQueuedOrders(
+        transaction: com.google.firebase.firestore.Transaction, delivery: WeeklySubscription
+    ): List<Order> {
+        val orders = delivery.queuedOrderIds.map { id ->
+            transaction.get(ordersCollection.document(id)).toObject(Order::class.java)
+                ?.apply { this.id = id } ?: error("Queued order changed. Refresh the schedule.")
+        }
+        check(orders.all { it.status == "Pending" || it.status == "Accepted" }) {
+            "This delivery has already been completed or closed. Manage the next delivery after its scheduled cutoff."
+        }
+        return orders
     }
 
     fun getSubscriptionsForCustomer(customerUsername: String): Task<QuerySnapshot> =
@@ -683,7 +814,11 @@ object FirebaseHelper {
                 }
                 validateDelivery(transaction, delivery)
             }
+            val queued = if (!active) readEditableQueuedOrders(transaction, delivery) else emptyList()
+            queued.forEach { transaction.delete(ordersCollection.document(it.id)) }
             transaction.update(ref, mapOf("active" to active, "nextDeliveryAt" to delivery.nextDeliveryAt,
+                "queuedDeliveryAt" to if (active) delivery.queuedDeliveryAt else 0L,
+                "queuedOrderIds" to if (active) delivery.queuedOrderIds else emptyList<String>(),
                 "lastStatus" to if (active) "Scheduled" else "Paused"))
             null
         }
@@ -702,6 +837,8 @@ object FirebaseHelper {
         val delivery = transaction.get(ref).toObject(WeeklySubscription::class.java)
         if (delivery != null) {
             if (delivery.active) requireDeliveryEditable(transaction, delivery)
+            val queued = readEditableQueuedOrders(transaction, delivery)
+            queued.forEach { transaction.delete(ordersCollection.document(it.id)) }
             transaction.delete(ref)
         }
         null
@@ -720,13 +857,20 @@ object FirebaseHelper {
         return query
             .get()
             .continueWithTask { queryTask ->
+                if (!queryTask.isSuccessful) throw queryTask.exception
+                    ?: IllegalStateException("Could not check recurring deliveries")
                 val dueTasks = queryTask.result?.documents
                     ?.mapNotNull { document ->
                         val subscription = document.toObject(WeeklySubscription::class.java)
                         // Opening-time adjustment can move a saved timestamp within its calendar day.
                         // Dates over two days away cannot be due, even across timezone/DST changes.
                         if (subscription != null && subscription.nextDeliveryAt <= now + 48L * 60 * 60 * 1000) {
-                            processDueSubscription(document.id, now)
+                            processDueSubscription(document.id, now).continueWithTask { first ->
+                                if (!first.isSuccessful) throw first.exception
+                                    ?: IllegalStateException("Could not queue recurring delivery")
+                                // Daily schedules can enter tomorrow's queue as today's cutoff passes.
+                                processDueSubscription(document.id, now)
+                            }
                         } else {
                             null
                         }
@@ -777,7 +921,19 @@ object FirebaseHelper {
             val stationSnapshot = transaction.get(stationRef)
             val station = stationSnapshot.toObject(User::class.java)
             val hours = station?.operatingHours ?: OperatingHours()
-            if (DeliveryFinalization.canEdit(subscription.nextDeliveryAt, hours, now)) return@runTransaction Unit
+            val editable = DeliveryFinalization.canEdit(subscription.nextDeliveryAt, hours, now)
+            val queueAction = DeliveryFinalization.queueAction(subscription.nextDeliveryAt, hours, now,
+                subscription.queuedDeliveryAt == subscription.nextDeliveryAt && subscription.queuedOrderIds.isNotEmpty())
+            if (queueAction == DeliveryFinalization.QueueAction.WAIT) return@runTransaction Unit
+            if (queueAction == DeliveryFinalization.QueueAction.ADVANCE) {
+                    transaction.update(subscriptionRef, mapOf(
+                        "nextDeliveryAt" to DeliveryFinalization.nextDelivery(subscription.nextDeliveryAt,
+                            subscription.repeatEveryDays, hours, now),
+                        "queuedDeliveryAt" to 0L, "queuedOrderIds" to emptyList<String>(),
+                        "lastStatus" to "Scheduled"
+                    ))
+                return@runTransaction Unit
+            }
             val customerSnapshot = transaction.get(customerRef)
             val productsById = items.associate { item ->
                 item.productId to transaction.get(productsCollection.document(item.productId))
@@ -808,6 +964,7 @@ object FirebaseHelper {
                 val orderId = orderIds[index]
                 val order = Order(
                     id = orderId,
+                    checkoutId = orderIds.first(),
                     productId = item.productId,
                     productName = product.name,
                     imageUri = product.imageUri,
@@ -820,7 +977,7 @@ object FirebaseHelper {
                     containerType = product.name,
                     paymentMethod = "Cash on Delivery",
                     status = "Pending",
-                    pendingExpiresAt = now + PENDING_ORDER_TIMEOUT_MILLIS,
+                    pendingExpiresAt = maxOf(now, DeliveryFinalization.cutoff(subscription.nextDeliveryAt, hours)) + PENDING_ORDER_TIMEOUT_MILLIS,
                     customerLat = customer.latitude,
                     customerLon = customer.longitude,
                     timestamp = now,
@@ -832,6 +989,8 @@ object FirebaseHelper {
                     isSubscriptionOrder = true,
                     subscriptionId = subscriptionId,
                     scheduledDeliveryDate = subscription.nextDeliveryAt,
+                    scheduledDeliveryTimeZoneId = hours.timeZoneId,
+                    recurringOrderIds = orderIds,
                     offeringType = OFFERING_PURCHASE
                 )
                 transaction.set(ordersCollection.document(orderId), order)
@@ -839,7 +998,9 @@ object FirebaseHelper {
             transaction.update(
                 subscriptionRef,
                 mapOf(
-                    "nextDeliveryAt" to nextDelivery,
+                    "nextDeliveryAt" to if (editable) subscription.nextDeliveryAt else nextDelivery,
+                    "queuedDeliveryAt" to if (editable) subscription.nextDeliveryAt else 0L,
+                    "queuedOrderIds" to if (editable) orderIds else emptyList<String>(),
                     "lastOrderId" to orderIds.first(),
                     "lastOrderIds" to orderIds,
                     "lastOrderAt" to now,

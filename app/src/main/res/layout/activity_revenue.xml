@@ -159,56 +159,6 @@
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Weekly Insights"
-                    android:textColor="@color/text_primary"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:layout_marginBottom="24dp"
-                    app:cardCornerRadius="32dp"
-                    app:cardElevation="0dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="@color/divider">
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="20dp">
-
-                        <TextView
-                            android:id="@+id/tvHotspotsStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Popular delivery areas"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="14sp" />
-
-                        <LinearLayout
-                            android:id="@+id/hotspotsContainer"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="vertical" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnViewHotspotsMap"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:layout_marginTop="16dp"
-                            android:text="Visualize on Map"
-                            android:textAllCaps="false"
-                            app:cornerRadius="16dp" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
                 <!-- Filter -->
                 <RadioGroup
                     android:id="@+id/revenuePeriodOptions"

@@ -30,7 +30,7 @@ class FeedbackAdapter(private val feedbackList: List<Feedback>) :
         val feedback = feedbackList[position]
         holder.tvCustomer.text = "From: ${feedback.customerUsername}"
         
-        val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+        val sdf = SimpleDateFormat("MMM dd, yyyy h:mma", Locale.US)
         holder.tvDate.text = sdf.format(Date(feedback.timestamp))
         
         holder.ratingStation.rating = feedback.stationRating

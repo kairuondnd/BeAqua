@@ -15,5 +15,7 @@ data class BeAquaNotification(
 ) {
     companion object {
         const val TYPE_ORDER_AUTO_CANCELLED = "ORDER_AUTO_CANCELLED"
+        const val TYPE_ORDER_DELIVERED = "ORDER_DELIVERED"
+        const val TYPE_RECEIPT_UPDATED = "RECEIPT_UPDATED"
     }
 }

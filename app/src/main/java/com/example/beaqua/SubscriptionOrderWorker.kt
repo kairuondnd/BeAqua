@@ -27,6 +27,10 @@ class SubscriptionOrderWorker(
             Tasks.await(FirebaseHelper.cancelExpiredPendingOrders(
                 customerUsername = if (stationOwner) null else username,
                 stationOwnerUsername = if (stationOwner) username else null), 60, TimeUnit.SECONDS)
+            if (!stationOwner) {
+                Tasks.await(NotificationHelper.deliverPendingCustomerNotifications(applicationContext, username),
+                    60, TimeUnit.SECONDS)
+            }
             Result.success()
         } catch (_: Exception) {
             Result.retry()

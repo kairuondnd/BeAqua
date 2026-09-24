@@ -9,6 +9,7 @@ import android.util.Patterns
 import android.view.View
 import android.view.animation.AnimationUtils
 import android.widget.EditText
+import android.widget.CheckBox
 import android.widget.ProgressBar
 import android.widget.RadioGroup
 import android.widget.TextView
@@ -83,6 +84,16 @@ class SignupActivity : AppCompatActivity() {
         val btnSignup = findViewById<MaterialButton>(R.id.btnSignupSubmit)
         val btnBack = findViewById<MaterialButton>(R.id.btnBackToMainSignup)
         val signupProgress = findViewById<ProgressBar>(R.id.signupProgress)
+        val privacyAcknowledgment = findViewById<CheckBox>(R.id.cbPrivacyAcknowledgment)
+        val privacyError = findViewById<TextView>(R.id.tvPrivacyError)
+        val openPrivacyNotice = View.OnClickListener {
+            startActivity(Intent(this, PrivacyNoticeActivity::class.java))
+        }
+        findViewById<View>(R.id.btnReadPrivacyNotice).setOnClickListener(openPrivacyNotice)
+        findViewById<View>(R.id.btnReadPrivacyNoticeBottom).setOnClickListener(openPrivacyNotice)
+        privacyAcknowledgment.setOnCheckedChangeListener { _, checked ->
+            if (checked) privacyError.visibility = View.GONE
+        }
 
         val etName = findViewById<EditText>(R.id.etName)
         val etOwnerFullName = findViewById<EditText>(R.id.etOwnerFullName)
@@ -168,6 +179,13 @@ class SignupActivity : AppCompatActivity() {
         btnBack.setOnClickListener { finish() }
 
         btnSignup.setOnClickListener {
+            if (!privacyAcknowledgment.isChecked) {
+                privacyError.visibility = View.VISIBLE
+                privacyAcknowledgment.requestRectangleOnScreen(android.graphics.Rect(
+                    0, 0, privacyAcknowledgment.width, privacyAcknowledgment.height), false)
+                privacyError.announceForAccessibility(getString(R.string.privacy_acknowledgment_required))
+                return@setOnClickListener
+            }
             val name = etName.text.toString().trim()
             val ownerFullName = etOwnerFullName.text.toString().trim()
             val contact = etContact.text.toString().trim()
@@ -275,7 +293,9 @@ class SignupActivity : AppCompatActivity() {
                         } else {
                             User.KYC_NOT_REQUIRED
                         },
-                        kycSubmittedAt = if (isStationOwner) System.currentTimeMillis() else 0L
+                        kycSubmittedAt = if (isStationOwner) System.currentTimeMillis() else 0L,
+                        privacyNoticeVersion = PrivacyNotice.VERSION,
+                        privacyNoticeAcknowledgedAt = System.currentTimeMillis()
                     )
 
                     if (isStationOwner) {
@@ -458,6 +478,7 @@ class SignupActivity : AppCompatActivity() {
         progress: ProgressBar
     ) {
         submitButton.isEnabled = !submitting
+        findViewById<CheckBox>(R.id.cbPrivacyAcknowledgment).isEnabled = !submitting
         submitButton.text = if (submitting) {
             "Submitting..."
         } else if (stationOwnerMode) {

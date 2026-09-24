@@ -31,8 +31,9 @@
                 <ImageView
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
+                    android:contentDescription="Back"
                     android:padding="10dp"
-                    android:src="@android:drawable/ic_menu_revert"
+                    android:src="@drawable/ic_back"
                     app:tint="@color/text_primary" />
             </com.google.android.material.card.MaterialCardView>
 

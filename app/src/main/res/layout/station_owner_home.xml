@@ -404,31 +404,63 @@
                                     android:layout_weight="1"
                                     android:text="Order Queue"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="20sp"
+                                    android:textSize="18sp"
                                     android:textStyle="bold" />
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
+                                    android:background="@drawable/bg_queue_badge"
+                                    android:paddingHorizontal="8dp"
+                                    android:paddingVertical="4dp"
+                                    android:includeFontPadding="false"
                                     android:text="Pending first"
-                                    android:textColor="@color/text_hint"
-                                    android:textSize="12sp" />
+                                    android:textColor="@color/primary_variant"
+                                    android:textSize="11sp" />
                             </LinearLayout>
                             <LinearLayout
                                 android:id="@+id/dashboardOrdersPreview"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="14dp"
+                                android:visibility="gone"
                                 android:orientation="vertical" />
-                            <TextView
-                                android:id="@+id/tvRecentOrdersEmpty"
+                            <LinearLayout
+                                android:id="@+id/layoutQueueEmpty"
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
+                                android:layout_height="64dp"
                                 android:layout_marginTop="14dp"
-                                android:gravity="center"
-                                android:padding="18dp"
-                                android:text="No active orders right now"
-                                android:textColor="@color/text_hint"
-                                android:textSize="14sp" />
+                                android:background="@drawable/bg_queue_row"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal"
+                                android:paddingHorizontal="12dp">
+                                <ImageView
+                                    android:layout_width="28dp"
+                                    android:layout_height="28dp"
+                                    android:layout_marginEnd="12dp"
+                                    android:importantForAccessibility="no"
+                                    android:src="@drawable/ic_orders"
+                                    app:tint="@color/primary" />
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+                                    <TextView
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:text="No orders waiting"
+                                        android:textColor="@color/text_secondary"
+                                        android:textSize="14sp"
+                                        android:textStyle="bold" />
+                                    <TextView
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="2dp"
+                                        android:text="New orders will appear here"
+                                        android:textColor="@color/text_hint"
+                                        android:textSize="12sp" />
+                                </LinearLayout>
+                            </LinearLayout>
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
@@ -855,8 +887,11 @@
                                     android:layout_marginEnd="6dp"
                                     android:layout_weight="1"
                                     android:background="@drawable/bg_pill_status"
-                                    android:hint="Opens (08:00)"
-                                    android:inputType="time"
+                                    android:hint="Opening time"
+                                    android:contentDescription="Opening time, tap to select AM or PM"
+                                    android:focusable="false"
+                                    android:clickable="true"
+                                    android:inputType="none"
                                     android:paddingHorizontal="14dp" />
 
                                 <EditText
@@ -866,8 +901,11 @@
                                     android:layout_marginStart="6dp"
                                     android:layout_weight="1"
                                     android:background="@drawable/bg_pill_status"
-                                    android:hint="Closes (18:00)"
-                                    android:inputType="time"
+                                    android:hint="Closing time"
+                                    android:contentDescription="Closing time, tap to select AM or PM"
+                                    android:focusable="false"
+                                    android:clickable="true"
+                                    android:inputType="none"
                                     android:paddingHorizontal="14dp" />
                             </LinearLayout>
 
@@ -941,9 +979,23 @@
                                 android:textSize="17sp"
                                 android:textStyle="bold" />
 
-                            <EditText android:id="@+id/etDeliveryFee" android:layout_width="match_parent" android:layout_height="48dp" android:hint="Delivery Fee" android:inputType="numberDecimal" />
-                            <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchRushOrder" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Enable Rush" />
-                            <EditText android:id="@+id/etRushOrderFee" android:layout_width="match_parent" android:layout_height="48dp" android:hint="Rush Fee" android:inputType="numberDecimal" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:labelFor="@id/etDeliveryFee"
+                                android:text="Delivery fees"
+                                android:textColor="@color/text_primary"
+                                android:textSize="14sp" />
+                            <EditText android:id="@+id/etDeliveryFee" android:layout_width="match_parent" android:layout_height="48dp" android:hint="Amount (₱)" android:inputType="numberDecimal" />
+                            <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchRushOrder" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Enable rush order" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:labelFor="@id/etRushOrderFee"
+                                android:text="Rush order fee"
+                                android:textColor="@color/text_primary"
+                                android:textSize="14sp" />
+                            <EditText android:id="@+id/etRushOrderFee" android:layout_width="match_parent" android:layout_height="48dp" android:hint="Amount (₱)" android:inputType="numberDecimal" />
 
 
 

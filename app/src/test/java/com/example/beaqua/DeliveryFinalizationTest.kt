@@ -6,6 +6,55 @@ import java.util.Calendar
 import java.util.TimeZone
 
 class DeliveryFinalizationTest {
+    @Test fun september23EntersQueueAtMidnightSeptember22AndStaysEditable() {
+        val delivery = date(23, 6)
+        assertEquals(date(22, 0), DeliveryFinalization.queueAt(delivery, hours))
+        assertEquals(DeliveryFinalization.QueueAction.WAIT,
+            DeliveryFinalization.queueAction(delivery, hours, date(21, 23, 59), false))
+        assertEquals(DeliveryFinalization.QueueAction.CREATE,
+            DeliveryFinalization.queueAction(delivery, hours, date(22, 0), false))
+        assertTrue(DeliveryFinalization.canEdit(delivery, hours, date(22, 12)))
+        assertEquals(DeliveryFinalization.QueueAction.WAIT,
+            DeliveryFinalization.queueAction(delivery, hours, date(23, 7, 59), true))
+        assertEquals(DeliveryFinalization.QueueAction.ADVANCE,
+            DeliveryFinalization.queueAction(delivery, hours, date(23, 8), true))
+    }
+
+    @Test fun everyIntervalQueuesExactlyOneCalendarDayEarly() {
+        for (days in listOf(1, 3, 5, 6, 7, 30)) {
+            val delivery = DeliveryFinalization.firstDeliveryAfter(date(1, 12), days, hours)
+            assertEquals(date(days, 0), DeliveryFinalization.queueAt(delivery, hours))
+        }
+    }
+
+    @Test fun dailyScheduleCanQueueTomorrowAfterTodaysCutoff() {
+        val now = date(23, 8)
+        val next = DeliveryFinalization.nextDelivery(date(23, 6), 1, hours, now)
+        assertEquals(date(24, 6), next)
+        assertEquals(DeliveryFinalization.QueueAction.CREATE,
+            DeliveryFinalization.queueAction(next, hours, now, false))
+        assertEquals(DeliveryFinalization.QueueAction.WAIT,
+            DeliveryFinalization.queueAction(next, hours, now, true))
+    }
+
+    @Test fun queueDateCrossesMonthsAndUsesStationTimezone() {
+        val previous = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+            assertEquals(date(30, 0), DeliveryFinalization.queueAt(date(31, 6), hours))
+        } finally { TimeZone.setDefault(previous) }
+    }
+
+    @Test fun noticeChangesFromTomorrowToTodayAndOrdinaryOrdersHaveNoNotice() {
+        val order = Order(isSubscriptionOrder = true, scheduledDeliveryDate = date(23, 6))
+        assertTrue(order.recurringDeliveryNotice(date(22, 12)).contains("Tomorrow"))
+        assertTrue(order.recurringDeliveryNotice(date(22, 12)).contains("Sep 23, 2026"))
+        assertTrue(order.recurringDeliveryNotice(date(22, 12)).contains("chat before delivering today"))
+        assertTrue(order.recurringDeliveryNotice(date(23, 9)).contains("Today"))
+        assertFalse(order.recurringDeliveryNotice(date(23, 9)).contains("Tomorrow"))
+        assertEquals("", Order().recurringDeliveryNotice(date(22, 12)))
+    }
+
     private val hours = OperatingHours(openTime = "08:00", closeTime = "18:00")
     private fun date(day: Int, hour: Int, minute: Int = 0): Long =
         Calendar.getInstance(TimeZone.getTimeZone("Asia/Manila")).apply {

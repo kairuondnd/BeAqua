@@ -132,46 +132,36 @@ class CartActivity : AppCompatActivity() {
             .setMessage("Get your water delivered regularly. Choose how many days between deliveries and review the quantity and first delivery date.\n\nFuture deliveries use Cash on Delivery at current station prices and delivery fees. Your order today is already placed.")
             .setNegativeButton("No thanks") { _, _ -> finishCheckout() }
             .setPositiveButton("Continue") { _, _ ->
-                if (repeatableItems.size == 1) {
-                    customizeCheckedOutItem(repeatableItems.first())
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle("Choose an item to repeat")
-                        .setItems(repeatableItems.map { "${it.quantity} × ${it.productName}" }.toTypedArray()) { _, which ->
-                            customizeCheckedOutItem(repeatableItems[which])
-                        }
-                        .setNegativeButton("No thanks") { _, _ -> finishCheckout() }
-                        .setOnCancelListener { finishCheckout() }
-                        .show()
-                }
+                customizeCheckedOutItems(repeatableItems)
             }
             .setOnCancelListener { finishCheckout() }
             .show()
     }
 
-    private fun customizeCheckedOutItem(item: CartItem) {
+    private fun customizeCheckedOutItems(items: List<CartItem>) {
         val user = currentUser ?: return
-        FirebaseHelper.getUser(item.stationOwnerUsername).addOnSuccessListener { snapshot ->
+        val stationUsername = items.firstOrNull()?.stationOwnerUsername ?: return
+        FirebaseHelper.getUser(stationUsername).addOnSuccessListener { snapshot ->
             if (isFinishing || isDestroyed) return@addOnSuccessListener
             val station = snapshot.toObject(User::class.java)
             if (station == null) {
-                showRecurrenceLoadError(item)
+                showRecurrenceLoadError(items)
                 return@addOnSuccessListener
             }
-            RecurringDeliveryEditor.show(this, user, station, checkoutItem = item,
+            RecurringDeliveryEditor.show(this, user, station, checkoutItems = items,
                 onCancelled = { finishCheckout() }, onSaved = {
                     DeliveryReminderWorker.start(this, user.username)
                     Toast.makeText(this, "Automated delivery saved. You can manage it from Automated Deliveries.", Toast.LENGTH_LONG).show()
                     finishCheckout()
                 })
-        }.addOnFailureListener { if (!isFinishing && !isDestroyed) showRecurrenceLoadError(item) }
+        }.addOnFailureListener { if (!isFinishing && !isDestroyed) showRecurrenceLoadError(items) }
     }
 
-    private fun showRecurrenceLoadError(item: CartItem) {
+    private fun showRecurrenceLoadError(items: List<CartItem>) {
         AlertDialog.Builder(this)
             .setTitle("Could not load delivery options")
             .setMessage("Your order was placed successfully. Retry to set up future deliveries, or skip for now.")
-            .setPositiveButton("Retry") { _, _ -> customizeCheckedOutItem(item) }
+            .setPositiveButton("Retry") { _, _ -> customizeCheckedOutItems(items) }
             .setNegativeButton("No thanks") { _, _ -> finishCheckout() }
             .setOnCancelListener { finishCheckout() }
             .show()

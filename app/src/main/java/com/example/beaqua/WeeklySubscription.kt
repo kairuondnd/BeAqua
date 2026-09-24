@@ -29,6 +29,8 @@ data class WeeklySubscription(
     var lastOrderId: String = "",
     var lastOrderIds: List<String> = emptyList(),
     var lastOrderAt: Long = 0L,
+    var queuedDeliveryAt: Long = 0L,
+    var queuedOrderIds: List<String> = emptyList(),
     var lastStatus: String = "Scheduled",
     var items: List<RecurringDeliveryItem> = emptyList(),
     var offeringType: String = OFFERING_PURCHASE,

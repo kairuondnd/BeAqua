@@ -93,13 +93,24 @@ class AdminActivity : AppCompatActivity() {
                 if (application.sanitaryPermitUrl.isBlank()) add("Sanitary Permit")
                 if (application.mayorsPermitUrl.isBlank()) add("Mayor's Business Permit")
             }
+            val stationName = application.name.ifBlank { application.username }
+            val warning = if (missingDocuments.size == 3) {
+                "$stationName has not submitted any verification documents."
+            } else {
+                "$stationName has not submitted all verification documents."
+            }
             AlertDialog.Builder(this)
-                .setTitle("Cannot approve yet")
+                .setTitle("Approve with missing documents?")
                 .setMessage(
-                    "The applicant must submit:\n\n" +
-                        missingDocuments.joinToString(separator = "\n") { "• $it" }
+                    "$warning\n\nMissing documents:\n" +
+                        missingDocuments.joinToString(separator = "\n") { "• $it" } +
+                        "\n\nApproving will make this station visible to customers and grant " +
+                        "Station Owner access even without these documents.\n\nDo you wish to proceed?"
                 )
-                .setPositiveButton("OK", null)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Approve anyway") { _, _ ->
+                    updateStatus(application, newStatus)
+                }
                 .show()
             return
         }

@@ -143,10 +143,8 @@ class UserHomeActivity : AppCompatActivity() {
         accountNotificationListener = NotificationHelper.listenForAccountNotifications(
             this,
             user.username
-        ) {
-            Intent(this, UserHistoryActivity::class.java).apply {
-                putExtra("USERNAME", user.username)
-            }
+        ) { notification ->
+            NotificationHelper.customerDestination(this, user.username, notification)
         }
     }
 
@@ -230,6 +228,8 @@ class UserHomeActivity : AppCompatActivity() {
                             if (order != null) {
                                 val status = order.status
                                 if (status == "Cancelled" && order.autoCancelledAt > 0L) continue
+                                // Completed receipts have one persisted notification for the entire checkout.
+                                if (status == "Delivered" && order.deliveryReceipt != null) continue
                                 
                                 val title = when (status) {
                                     "Accepted" -> "Order Accepted!"

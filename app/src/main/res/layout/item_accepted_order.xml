@@ -64,13 +64,20 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/btnChatWithCustomerAccepted" />
 
+        <androidx.constraintlayout.widget.Barrier
+            android:id="@+id/acceptedContentBottom"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:barrierDirection="bottom"
+            app:constraint_referenced_ids="tvAcceptedPaymentMethod,btnPrintReceiptAccepted,btnChatWithCustomerAccepted" />
+
         <View
             android:id="@+id/dividerAccepted"
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="@color/divider"
             android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/btnPrintReceiptAccepted" />
+            app:layout_constraintTop_toBottomOf="@id/acceptedContentBottom" />
 
         <LinearLayout
             android:id="@+id/llActions"

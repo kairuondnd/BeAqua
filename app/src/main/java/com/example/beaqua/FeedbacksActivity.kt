@@ -29,8 +29,11 @@ class FeedbacksActivity : AppCompatActivity() {
         role = intent.getStringExtra("ROLE") ?: "Station Owner"
 
         drawerLayout = findViewById(R.id.drawerLayoutFeedbacks)
+        val btnBack = findViewById<ImageButton>(R.id.btnBackFeedbacks)
         val btnMenu = findViewById<ImageButton>(R.id.btnMenuFeedbacks)
-        btnMenu.setOnClickListener {
+
+        btnBack?.setOnClickListener { finish() }
+        btnMenu?.setOnClickListener {
             drawerLayout.openDrawer(GravityCompat.END)
         }
 

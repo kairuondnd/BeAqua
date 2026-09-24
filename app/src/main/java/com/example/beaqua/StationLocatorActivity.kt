@@ -2,25 +2,24 @@ package com.example.beaqua
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
-import com.google.gson.JsonObject
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.EdgeInsets
 import com.mapbox.maps.MapView
-import com.mapbox.maps.plugin.annotation.annotations
-import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.OnCircleAnnotationClickListener
-import com.mapbox.maps.plugin.annotation.generated.createCircleAnnotationManager
+import com.mapbox.maps.viewannotation.geometry
+import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -45,8 +44,7 @@ class StationLocatorActivity : AppCompatActivity() {
     private lateinit var selectedDeliveryFee: TextView
     private lateinit var viewProductsButton: MaterialButton
 
-    private var stationAnnotations: CircleAnnotationManager? = null
-    private var customerAnnotations: CircleAnnotationManager? = null
+    private val stationMarkers = mutableMapOf<String, View>()
     private var customer: User? = null
     private var selectedStation: NearbyStation? = null
     private val stationsByUsername = mutableMapOf<String, NearbyStation>()
@@ -87,71 +85,53 @@ class StationLocatorActivity : AppCompatActivity() {
         }
 
         MapStyleHelper.loadReadableStyle(mapView) {
-            setupAnnotations()
+            if (isFinishing || isDestroyed) return@loadReadableStyle
             loadCustomerAndStations()
         }
-    }
-
-    private fun setupAnnotations() {
-        stationAnnotations = mapView.annotations.createCircleAnnotationManager().also { manager ->
-            manager.addClickListener(OnCircleAnnotationClickListener { annotation ->
-                val username = annotation.getData()
-                    ?.asJsonObject
-                    ?.get("station_username")
-                    ?.asString
-                val nearbyStation = username?.let(stationsByUsername::get)
-                if (nearbyStation != null) {
-                    selectStation(nearbyStation, moveCamera = true)
-                }
-                true
-            })
-        }
-        customerAnnotations = mapView.annotations.createCircleAnnotationManager()
     }
 
     private fun loadCustomerAndStations() {
         val username = intent.getStringExtra("USERNAME").orEmpty()
         if (username.isBlank()) {
-            Toast.makeText(this, "Customer session was not found", Toast.LENGTH_SHORT).show()
-            finish()
+            loading.visibility = View.GONE
+            showLoadError("Sign in again to load your delivery location")
             return
         }
 
         loading.visibility = View.VISIBLE
         FirebaseHelper.getUser(username)
             .addOnSuccessListener { customerSnapshot ->
-                customer = customerSnapshot.toObject(User::class.java)
+                if (isFinishing || isDestroyed) return@addOnSuccessListener
+                val loadedCustomer = customerSnapshot.toObject(User::class.java)
                 FirebaseHelper.getApprovedStationOwners()
                     .addOnSuccessListener { stationSnapshot ->
-                        loading.visibility = View.GONE
-                        displayStations(stationSnapshot.toObjects(User::class.java))
+                        displayLocations(loadedCustomer, stationSnapshot.toObjects(User::class.java))
                     }
                     .addOnFailureListener {
+                        if (isFinishing || isDestroyed) return@addOnFailureListener
                         loading.visibility = View.GONE
                         showLoadError("Could not load water stations")
                     }
             }
             .addOnFailureListener {
+                if (isFinishing || isDestroyed) return@addOnFailureListener
                 loading.visibility = View.GONE
                 showLoadError("Could not load your location")
             }
     }
 
     private fun displayStations(allStations: List<User>) {
-        stationAnnotations?.deleteAll()
-        customerAnnotations?.deleteAll()
+        mapView.viewAnnotationManager.removeAllViewAnnotations()
+        stationMarkers.clear()
         stationsByUsername.clear()
+        selectedStation = null
 
         val customerPoint = customer?.toPointOrNull()
         if (customerPoint != null) {
-            customerAnnotations?.create(
-                CircleAnnotationOptions()
-                    .withPoint(customerPoint)
-                    .withCircleRadius(11.0)
-                    .withCircleColor(MapStyleHelper.CUSTOMER_MARKER_COLOR)
-                    .withCircleStrokeColor(MapStyleHelper.MARKER_STROKE_COLOR)
-                    .withCircleStrokeWidth(4.0)
-            )
+            addLocationMarker(customerPoint, isCustomer = true, description = "You — your delivery location") {
+                Toast.makeText(this, customer?.address?.takeIf { it.isNotBlank() }?.let { "You: $it" }
+                    ?: "You — your delivery location", Toast.LENGTH_SHORT).show()
+            }
         } else {
             Toast.makeText(
                 this,
@@ -160,7 +140,7 @@ class StationLocatorActivity : AppCompatActivity() {
             ).show()
         }
 
-        val nearbyStations = allStations.mapNotNull { station ->
+        val nearbyStations = allStations.filter { it.username.isNotBlank() }.distinctBy { it.username }.mapNotNull { station ->
             val point = station.toPointOrNull() ?: return@mapNotNull null
             NearbyStation(
                 user = station,
@@ -176,23 +156,15 @@ class StationLocatorActivity : AppCompatActivity() {
 
         nearbyStations.forEach { station ->
             stationsByUsername[station.user.username] = station
-            val data = JsonObject().apply {
-                addProperty("station_username", station.user.username)
-            }
-            stationAnnotations?.create(
-                CircleAnnotationOptions()
-                    .withPoint(station.point)
-                    .withCircleRadius(10.0)
-                    .withCircleColor(MapStyleHelper.STATION_MARKER_COLOR)
-                    .withCircleStrokeColor(MapStyleHelper.MARKER_STROKE_COLOR)
-                    .withCircleStrokeWidth(3.0)
-                    .withData(data)
-            )
+            stationMarkers[station.user.username] = addLocationMarker(
+                station.point, isCustomer = false,
+                description = "Water station: ${station.user.name.ifBlank { station.user.username }}"
+            ) { selectStation(station, moveCamera = true) }
         }
 
         stationCount.text = when (nearbyStations.size) {
-            1 -> "1 station • Blue: you • Teal: station"
-            else -> "${nearbyStations.size} stations • Blue: you • Teal: stations"
+            1 -> "1 station • Tap a water drop for details"
+            else -> "${nearbyStations.size} stations • Tap a water drop for details"
         }
         emptyMessage.visibility = if (nearbyStations.isEmpty()) View.VISIBLE else View.GONE
         selectedCard.visibility = if (nearbyStations.isEmpty()) View.GONE else View.VISIBLE
@@ -207,8 +179,33 @@ class StationLocatorActivity : AppCompatActivity() {
         }
     }
 
+    internal fun displayLocations(customer: User?, stations: List<User>) {
+        if (isFinishing || isDestroyed) return
+        this.customer = customer
+        loading.visibility = View.GONE
+        displayStations(stations)
+    }
+
+    private fun addLocationMarker(point: Point, isCustomer: Boolean, description: String, onClick: () -> Unit): View {
+        // Native Android views provide accessible click targets without querying/decoding map features.
+        return mapView.viewAnnotationManager.addViewAnnotation(
+            R.layout.view_station_map_marker,
+            viewAnnotationOptions { geometry(point); allowOverlap(true); ignoreCameraPadding(true) }
+        ).apply {
+            contentDescription = description
+            findViewById<ImageView>(R.id.ivStationMapMarker).apply {
+                setImageResource(if (isCustomer) R.drawable.ic_home else R.drawable.ic_map_water_station)
+                imageTintList = if (isCustomer) ColorStateList.valueOf(Color.parseColor("#1565C0")) else null
+            }
+            findViewById<TextView>(R.id.tvStationMapMarkerLabel).visibility = if (isCustomer) View.VISIBLE else View.GONE
+            setOnClickListener { if (!isFinishing && !isDestroyed) onClick() }
+        }
+    }
+
     private fun selectStation(station: NearbyStation, moveCamera: Boolean) {
         selectedStation = station
+        selectedCard.visibility = View.VISIBLE
+        stationMarkers.forEach { (username, marker) -> marker.isSelected = username == station.user.username }
         selectedName.text = station.user.name.ifBlank { station.user.username }
         selectedAddress.text = station.user.address.ifBlank { "Address not provided" }
         selectedDistance.text = station.distanceKm?.let(::formatDistance)
@@ -284,5 +281,11 @@ class StationLocatorActivity : AppCompatActivity() {
         emptyMessage.visibility = View.VISIBLE
         selectedCard.visibility = View.GONE
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onDestroy() {
+        if (::mapView.isInitialized) mapView.viewAnnotationManager.removeAllViewAnnotations()
+        stationMarkers.clear()
+        super.onDestroy()
     }
 }

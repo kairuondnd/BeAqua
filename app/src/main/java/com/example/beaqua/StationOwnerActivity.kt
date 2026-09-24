@@ -2,6 +2,7 @@ package com.example.beaqua
 
 import android.Manifest
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -37,6 +38,8 @@ class StationOwnerActivity : AppCompatActivity() {
     private val NOTIFICATION_PERMISSION_CODE = 1002
     private var accountNotificationListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var newOrdersListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var visibleOrdersListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var recurringSchedulesListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     private lateinit var currentUsername: String
     private lateinit var tvNavName: TextView
@@ -143,6 +146,17 @@ class StationOwnerActivity : AppCompatActivity() {
 
     private fun initializeApprovedStationOwner() {
         SubscriptionOrderWorker.bindAccount(this, currentUsername, stationOwner = true)
+        recurringSchedulesListener?.remove()
+        recurringSchedulesListener = FirebaseHelper.subscriptionsCollection
+            .whereEqualTo("stationOwnerUsername", currentUsername)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                    FirebaseHelper.processDueSubscriptions(stationOwnerUsername = currentUsername)
+                        .addOnFailureListener {
+                            Toast.makeText(this, "Could not check recurring deliveries: ${it.message}", Toast.LENGTH_LONG).show()
+                        }
+                }
+            }
 
         setupSideNav()
         checkNotificationPermission()
@@ -231,8 +245,9 @@ class StationOwnerActivity : AppCompatActivity() {
                 "Your KYC application was not approved. Update and resubmit all required " +
                     "documents for another administrator review."
             !completeDocuments ->
-                "Your station account is active, but all required KYC documents must be " +
-                    "submitted before an administrator can approve it."
+                "Your station is waiting for administrator approval. Submit your missing " +
+                    "KYC documents for review. Station operations remain locked until an " +
+                    "administrator approves your account."
             else ->
                 "Your KYC application is waiting for administrator review. You can sign in " +
                     "and manage your profile, but station operations remain locked."
@@ -301,7 +316,7 @@ class StationOwnerActivity : AppCompatActivity() {
 
     private fun restrictedStatusLabel(user: User): String = when {
         user.kycStatus == User.KYC_REJECTED -> "REJECTED • INACTIVE"
-        !user.hasCompleteKycDocuments() -> "DOCUMENTS REQUIRED • INACTIVE"
+        !user.hasCompleteKycDocuments() -> "DOCUMENTS MISSING • INACTIVE"
         else -> "PENDING ADMIN APPROVAL • INACTIVE"
     }
 
@@ -499,6 +514,8 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        visibleOrdersListener?.remove()
+        recurringSchedulesListener?.remove()
         newOrdersListener?.remove()
         accountNotificationListener?.remove()
         super.onDestroy()
@@ -513,10 +530,13 @@ class StationOwnerActivity : AppCompatActivity() {
         val tvWeeklySales = view.findViewById<TextView>(R.id.tvWeeklySales)
         val tvMonthlySales = view.findViewById<TextView>(R.id.tvMonthlySales)
         val ordersPreview = view.findViewById<LinearLayout>(R.id.dashboardOrdersPreview)
-        val emptyOrders = view.findViewById<TextView>(R.id.tvRecentOrdersEmpty)
+        val emptyOrders = view.findViewById<View>(R.id.layoutQueueEmpty)
         val salesGraph = view.findViewById<SalesGraphView>(R.id.salesGraphView)
 
-        FirebaseHelper.getOrdersForStation(currentUsername, false).addOnSuccessListener { result ->
+        visibleOrdersListener?.remove()
+        visibleOrdersListener = FirebaseHelper.ordersCollection
+            .whereEqualTo("stationOwnerUsername", currentUsername).addSnapshotListener { result, _ ->
+            if (result == null || !view.isAttachedToWindow) return@addSnapshotListener
             var totalSales = 0.0
             val totalOrdersCount = result.size()
             var completedCount = 0
@@ -565,7 +585,7 @@ class StationOwnerActivity : AppCompatActivity() {
             tvPreparingOrders?.text = preparingCount.toString()
             tvWeeklySales?.text = String.format(Locale.getDefault(), "₱%,.2f", weeklySales)
             tvMonthlySales?.text = String.format(Locale.getDefault(), "₱%,.2f", monthlySales)
-            salesGraph?.setSales(buildSalesSeries(deliveredOrders, selectedGraphRange))
+            salesGraph?.setSalesPoints(buildSalesSeries(deliveredOrders, selectedGraphRange))
             setupGraphRangeButtons(view, deliveredOrders)
             renderDashboardOrderPreview(ordersPreview, emptyOrders, activeOrders)
         }
@@ -591,40 +611,85 @@ class StationOwnerActivity : AppCompatActivity() {
             setOnItemClickListener { _, _, position, _ ->
                 val selectedLabel = labels[position]
                 selectedGraphRange = ranges[selectedLabel] ?: GraphRange.WEEK
-                salesGraph?.setSales(buildSalesSeries(deliveredOrders, selectedGraphRange))
+                salesGraph?.setSalesPoints(buildSalesSeries(deliveredOrders, selectedGraphRange))
             }
         }
     }
 
-    private fun buildSalesSeries(deliveredOrders: List<Order>, range: GraphRange): List<Double> {
+    private fun buildSalesSeries(deliveredOrders: List<Order>, range: GraphRange): List<SalesPoint> {
         val now = System.currentTimeMillis()
+        val startToday = startOfToday()
+        val timeFormatHour = java.text.SimpleDateFormat("HH:00", Locale.getDefault())
+        val timeFormatDayWeek = java.text.SimpleDateFormat("EEE, MMM d", Locale.getDefault())
+        val timeFormatDayMonth = java.text.SimpleDateFormat("MMM d", Locale.getDefault())
+        val timeFormatMonthYear = java.text.SimpleDateFormat("MMM yyyy", Locale.getDefault())
+
         return when (range) {
             GraphRange.DAY -> {
-                val values = DoubleArray(24)
+                val revenues = DoubleArray(24)
+                val counts = IntArray(24)
                 deliveredOrders.forEach { order ->
                     val hoursAgo = ((now - order.timestamp) / 3_600_000L).toInt()
-                    if (hoursAgo in 0..23) values[23 - hoursAgo] += order.totalPrice
+                    if (hoursAgo in 0..23) {
+                        val index = 23 - hoursAgo
+                        revenues[index] += order.totalPrice
+                        counts[index]++
+                    }
                 }
-                values.toList()
+                List(24) { i ->
+                    val slotTime = now - (23 - i) * 3_600_000L
+                    SalesPoint(
+                        revenue = revenues[i],
+                        orderCount = counts[i],
+                        label = timeFormatHour.format(java.util.Date(slotTime))
+                    )
+                }
             }
             GraphRange.WEEK -> {
-                val values = DoubleArray(7)
+                val revenues = DoubleArray(7)
+                val counts = IntArray(7)
                 deliveredOrders.forEach { order ->
-                    val daysAgo = ((startOfToday() - order.timestamp) / 86_400_000L).toInt()
-                    if (daysAgo in 0..6) values[6 - daysAgo] += order.totalPrice
+                    val daysAgo = ((startToday - order.timestamp) / 86_400_000L).toInt()
+                    if (daysAgo in 0..6) {
+                        val index = 6 - daysAgo
+                        revenues[index] += order.totalPrice
+                        counts[index]++
+                    }
                 }
-                values.toList()
+                List(7) { i ->
+                    val slotTime = startToday - (6 - i) * 86_400_000L
+                    val labelText = if (i == 6) "Today" else timeFormatDayWeek.format(java.util.Date(slotTime))
+                    SalesPoint(
+                        revenue = revenues[i],
+                        orderCount = counts[i],
+                        label = labelText
+                    )
+                }
             }
             GraphRange.MONTH -> {
-                val values = DoubleArray(30)
+                val revenues = DoubleArray(30)
+                val counts = IntArray(30)
                 deliveredOrders.forEach { order ->
-                    val daysAgo = ((startOfToday() - order.timestamp) / 86_400_000L).toInt()
-                    if (daysAgo in 0..29) values[29 - daysAgo] += order.totalPrice
+                    val daysAgo = ((startToday - order.timestamp) / 86_400_000L).toInt()
+                    if (daysAgo in 0..29) {
+                        val index = 29 - daysAgo
+                        revenues[index] += order.totalPrice
+                        counts[index]++
+                    }
                 }
-                values.toList()
+                List(30) { i ->
+                    val slotTime = startToday - (29 - i) * 86_400_000L
+                    val labelText = if (i == 29) "Today" else timeFormatDayMonth.format(java.util.Date(slotTime))
+                    SalesPoint(
+                        revenue = revenues[i],
+                        orderCount = counts[i],
+                        label = labelText
+                    )
+                }
             }
             GraphRange.YEAR -> {
-                val values = DoubleArray(12)
+                val revenues = DoubleArray(12)
+                val counts = IntArray(12)
                 val calendarNow = java.util.Calendar.getInstance()
                 deliveredOrders.forEach { order ->
                     val calendarOrder = java.util.Calendar.getInstance().apply {
@@ -632,9 +697,22 @@ class StationOwnerActivity : AppCompatActivity() {
                     }
                     val monthsAgo = (calendarNow.get(java.util.Calendar.YEAR) - calendarOrder.get(java.util.Calendar.YEAR)) * 12 +
                         calendarNow.get(java.util.Calendar.MONTH) - calendarOrder.get(java.util.Calendar.MONTH)
-                    if (monthsAgo in 0..11) values[11 - monthsAgo] += order.totalPrice
+                    if (monthsAgo in 0..11) {
+                        val index = 11 - monthsAgo
+                        revenues[index] += order.totalPrice
+                        counts[index]++
+                    }
                 }
-                values.toList()
+                List(12) { i ->
+                    val cal = (calendarNow.clone() as java.util.Calendar).apply {
+                        add(java.util.Calendar.MONTH, -(11 - i))
+                    }
+                    SalesPoint(
+                        revenue = revenues[i],
+                        orderCount = counts[i],
+                        label = timeFormatMonthYear.format(cal.time)
+                    )
+                }
             }
         }
     }
@@ -656,52 +734,86 @@ class StationOwnerActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderDashboardOrderPreview(container: LinearLayout?, emptyView: TextView?, orders: List<Order>) {
+    private fun renderDashboardOrderPreview(container: LinearLayout?, emptyView: View?, orders: List<Order>) {
         if (container == null || emptyView == null) return
 
         container.removeAllViews()
-        val previewOrders = orders.sortedByDescending { it.timestamp }.take(3)
+        val previewOrders = groupCheckoutOrders(orders)
+            .sortedWith(compareBy<OrderGroup> { if (it.first.status == "Pending") 0 else 1 }
+                .thenByDescending { it.first.timestamp }).take(3)
         emptyView.visibility = if (previewOrders.isEmpty()) View.VISIBLE else View.GONE
+        container.visibility = if (previewOrders.isEmpty()) View.GONE else View.VISIBLE
+        fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-        previewOrders.forEach { order ->
+        previewOrders.forEachIndexed { index, group ->
+            val order = group.first
             val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(18, 16, 18, 16)
-                setBackgroundResource(R.drawable.bg_pill_status)
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                setBackgroundResource(R.drawable.bg_queue_row)
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+                    if (index > 0) topMargin = dp(4)
+                }
             }
-
+            val labels = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
+            }
             val title = TextView(this).apply {
-                text = "${order.customerName} • ${if (order.isRefill()) "REFILL • " else ""}${order.productName}"
+                text = order.customerName
                 setTextColor(ContextCompat.getColor(this@StationOwnerActivity, R.color.text_primary))
-                textSize = 15f
+                textSize = 14f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                includeFontPadding = false
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             }
-
             val details = TextView(this).apply {
-                text = if (order.isRefill()) {
-                    "${order.status} • ${order.emptyContainerCount.coerceAtLeast(order.quantity)} empties"
-                } else {
-                    "${order.status} • Qty ${order.quantity}"
+                text = group.items.joinToString(" · ") { item ->
+                    "${item.quantity} × ${item.productName}"
                 }
                 setTextColor(ContextCompat.getColor(this@StationOwnerActivity, R.color.text_secondary))
-                textSize = 13f
+                textSize = 12f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                includeFontPadding = false
             }
-
-            row.addView(title)
-            row.addView(details)
+            val status = TextView(this).apply {
+                text = if (order.status == "Pending") "Pending" else "Preparing"
+                textSize = 11f
+                includeFontPadding = false
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(ContextCompat.getColor(this@StationOwnerActivity,
+                        if (order.status == "Pending") R.color.yellow_soft else R.color.sky_blue_light))
+                }
+                setTextColor(ContextCompat.getColor(this@StationOwnerActivity,
+                    if (order.status == "Pending") R.color.warning else R.color.primary_variant))
+            }
+            labels.addView(title)
+            labels.addView(details)
+            if (order.isSubscriptionOrder && order.scheduledDeliveryDate > 0L) {
+                details.text = "${order.recurringDeliveryLabel()} · ${details.text}"
+                row.setOnClickListener {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Recurring delivery")
+                        .setMessage(order.recurringDeliveryNotice())
+                        .setPositiveButton("View orders") { _, _ -> loadOrdersView(false) }
+                        .setNegativeButton("Close", null).show()
+                }
+            }
+            row.addView(labels)
+            row.addView(status)
+            row.contentDescription = "${order.customerName}, ${status.text}. ${group.itemSummary()}"
             container.addView(row)
-
-            val spacer = Space(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    10
-                )
-            }
-            container.addView(spacer)
         }
     }
 
     private fun loadOrdersView(onlyPending: Boolean) {
+        FirebaseHelper.processDueSubscriptions(stationOwnerUsername = currentUsername)
         isShowingOnlyPending = onlyPending
         val ordersView = layoutInflater.inflate(R.layout.station_owner_home, null)
         val contentFrame = findViewById<FrameLayout>(R.id.stationContentFrame)
@@ -945,8 +1057,8 @@ class StationOwnerActivity : AppCompatActivity() {
             etDeliveryFee.setText(String.format(Locale.getDefault(), "%.2f", user.deliveryFee))
             switchRush.isChecked = user.rushOrderEnabled
             etRushFee.setText(String.format(Locale.getDefault(), "%.2f", user.rushOrderFee))
-            etOperatingOpen.setText(user.operatingHours.openTime)
-            etOperatingClose.setText(user.operatingHours.closeTime)
+            etOperatingOpen.setText(user.operatingHours.openTime.toDisplayTime())
+            etOperatingClose.setText(user.operatingHours.closeTime.toDisplayTime())
             when (user.operatingHours.statusOverride.uppercase(Locale.US)) {
                 OperatingHours.STATUS_OPEN -> operatingStatusGroup.check(R.id.rbStatusOpen)
                 OperatingHours.STATUS_CLOSED -> operatingStatusGroup.check(R.id.rbStatusClosed)
@@ -954,6 +1066,22 @@ class StationOwnerActivity : AppCompatActivity() {
             }
             renderOperatingStatus(user.operatingHours)
         }
+
+        fun bindTimePicker(field: EditText, fallback: String, title: String) {
+            field.setOnClickListener {
+                val time = normalizeOperatingTime(field.text.toString()) ?: fallback
+                TimePickerDialog(this, { _, hour, minute ->
+                    field.setText(String.format(Locale.US, "%02d:%02d", hour, minute).toDisplayTime())
+                    field.error = null
+                    val open = normalizeOperatingTime(etOperatingOpen.text.toString()) ?: "08:00"
+                    val close = normalizeOperatingTime(etOperatingClose.text.toString()) ?: "18:00"
+                    renderOperatingStatus(OperatingHours(open, close, selectedOperatingOverride()))
+                }, time.substringBefore(':').toInt(), time.substringAfter(':').toInt(), false)
+                    .apply { setTitle(title) }.show()
+            }
+        }
+        bindTimePicker(etOperatingOpen, "08:00", "Opening time")
+        bindTimePicker(etOperatingClose, "18:00", "Closing time")
 
         // Load current settings
         currentUserData?.let(::bindSettings) ?: FirebaseHelper.getUser(currentUsername)
@@ -965,22 +1093,22 @@ class StationOwnerActivity : AppCompatActivity() {
             }
 
         operatingStatusGroup.setOnCheckedChangeListener { _, _ ->
-            val openTime = normalize24HourTime(etOperatingOpen.text.toString()) ?: "08:00"
-            val closeTime = normalize24HourTime(etOperatingClose.text.toString()) ?: "18:00"
+            val openTime = normalizeOperatingTime(etOperatingOpen.text.toString()) ?: "08:00"
+            val closeTime = normalizeOperatingTime(etOperatingClose.text.toString()) ?: "18:00"
             renderOperatingStatus(
                 OperatingHours(openTime, closeTime, selectedOperatingOverride())
             )
         }
 
         btnSaveOperating.setOnClickListener {
-            val openTime = normalize24HourTime(etOperatingOpen.text.toString())
-            val closeTime = normalize24HourTime(etOperatingClose.text.toString())
+            val openTime = normalizeOperatingTime(etOperatingOpen.text.toString())
+            val closeTime = normalizeOperatingTime(etOperatingClose.text.toString())
             if (openTime == null) {
-                etOperatingOpen.error = "Use a valid time such as 08:00"
+                etOperatingOpen.error = "Select an opening time, such as 8:00AM"
                 return@setOnClickListener
             }
             if (closeTime == null) {
-                etOperatingClose.error = "Use a valid time such as 18:00"
+                etOperatingClose.error = "Select a closing time, such as 6:00PM"
                 return@setOnClickListener
             }
 
@@ -990,8 +1118,8 @@ class StationOwnerActivity : AppCompatActivity() {
                 .addOnSuccessListener {
                     currentUserData = (currentUserData ?: User(username = currentUsername))
                         .copy(operatingHours = hours)
-                    etOperatingOpen.setText(openTime)
-                    etOperatingClose.setText(closeTime)
+                    etOperatingOpen.setText(openTime.toDisplayTime())
+                    etOperatingClose.setText(closeTime.toDisplayTime())
                     renderOperatingStatus(hours)
                     btnSaveOperating.isEnabled = true
                     Toast.makeText(this, "Operating hours updated", Toast.LENGTH_SHORT).show()
@@ -1052,15 +1180,6 @@ class StationOwnerActivity : AppCompatActivity() {
         }
     }
 
-    private fun normalize24HourTime(value: String): String? {
-        val parts = value.trim().split(":")
-        if (parts.size != 2) return null
-        val hour = parts[0].toIntOrNull() ?: return null
-        val minute = parts[1].toIntOrNull() ?: return null
-        if (hour !in 0..23 || minute !in 0..59) return null
-        return String.format(Locale.US, "%02d:%02d", hour, minute)
-    }
-
     private fun timeInMinutes(value: String): Int {
         val parts = value.split(":")
         return parts[0].toInt() * 60 + parts[1].toInt()
@@ -1102,69 +1221,62 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun refreshOrders() {
-        ordersContainer.removeAllViews()
-        FirebaseHelper.getOrdersForStation(currentUsername, false).addOnSuccessListener { result ->
-            for (document in result) {
-                val order = document.toObject(Order::class.java) ?: continue
-                order.id = document.id
-                if (order.status == "Pending") addIncomingOrder(order)
+        visibleOrdersListener?.remove()
+        visibleOrdersListener = FirebaseHelper.ordersCollection
+            .whereEqualTo("stationOwnerUsername", currentUsername).addSnapshotListener { result, error ->
+            if (!ordersContainer.isAttachedToWindow) return@addSnapshotListener
+            if (result == null) {
+                Toast.makeText(this, "Could not load orders: ${error?.message}", Toast.LENGTH_LONG).show()
+                return@addSnapshotListener
             }
-        }
-
-        if (!isShowingOnlyPending) {
-            acceptedOrdersContainer.removeAllViews()
-            FirebaseHelper.getOrdersForStation(currentUsername, false).addOnSuccessListener { result ->
-                for (document in result) {
-                    val order = document.toObject(Order::class.java) ?: continue
-                    if (order.status == "Accepted") {
-                        order.id = document.id
-                        addAcceptedOrder(order)
-                    }
-                }
+            val orders = result.documents.mapNotNull { document ->
+                document.toObject(Order::class.java)?.apply { id = document.id }
+            }
+            ordersContainer.removeAllViews()
+            groupCheckoutOrders(orders.filter { it.status == "Pending" }).forEach(::addIncomingOrder)
+            if (!isShowingOnlyPending) {
+                acceptedOrdersContainer.removeAllViews()
+                groupCheckoutOrders(orders.filter { it.status == "Accepted" }).forEach(::addAcceptedOrder)
             }
         }
     }
 
-    private fun addIncomingOrder(order: Order) {
+    private fun addIncomingOrder(group: OrderGroup) {
+        val order = group.first
         val orderView = LayoutInflater.from(this).inflate(R.layout.item_order, ordersContainer, false)
         val tvOrderInfo = orderView.findViewById<TextView>(R.id.tvOrderInfo)
         
-        var infoText = "${order.customerName} ordered ${order.productName} (Qty: ${order.quantity})"
-        if (order.isRefill()) {
-            infoText = "[REFILL EXCHANGE] ${order.customerName}: " +
-                "${order.emptyContainerCount.coerceAtLeast(order.quantity)} empty ${order.containerType} container(s)"
-            if (order.refillInstructions.isNotBlank()) {
-                infoText += "\nNotes: ${order.refillInstructions}"
-            }
-        }
+        var infoText = "${order.customerName} ordered:\n${group.itemSummary()}"
         if (order.isSubscriptionOrder) {
-            infoText = "[AUTOMATED DELIVERY] $infoText"
+            infoText = "[RECURRING DELIVERY] $infoText\n${order.recurringDeliveryNotice()}"
         }
         if (order.isRushOrder) {
-            infoText = "[RUSH] $infoText\nRush Fee: ₱${String.format(Locale.getDefault(), "%.2f", order.rushOrderFee)}"
+            infoText = "[RUSH] $infoText\nRush Fee: ₱${String.format(Locale.getDefault(), "%.2f", group.items.sumOf { it.rushOrderFee })}"
             tvOrderInfo.setTextColor(ContextCompat.getColor(this, R.color.warning))
         }
         
-        tvOrderInfo.text = infoText
+        tvOrderInfo.text = "$infoText\nTotal: ₱${String.format(Locale.getDefault(), "%.2f", group.totalPrice)}"
         orderView.findViewById<TextView>(R.id.tvOrderTime).visibility = View.GONE
-        orderView.findViewById<TextView>(R.id.tvPaymentMethod).text = "Payment: ${order.paymentMethod}${if(order.isPaid) " (PAID)" else ""}"
+        orderView.findViewById<TextView>(R.id.tvPaymentMethod).text = "Payment: ${order.paymentMethod}${if(group.isPaid) " (PAID)" else ""}"
 
         orderView.findViewById<Button>(R.id.btnAccept).setOnClickListener { 
-            if (order.paymentMethod == "GCash" && !order.isPaid) {
+            if (order.paymentMethod == "GCash" && !group.isPaid) {
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Verify GCash payment")
-                    .setMessage("Check your GCash account for this customer's payment of ₱${order.totalPrice} before accepting order ${order.id}.")
+                    .setMessage("Check your GCash account for this customer's payment of ₱${String.format(Locale.getDefault(), "%.2f", group.totalPrice)} before accepting all ${group.items.size} item(s).")
                     .setPositiveButton("Payment received") { _, _ ->
-                        showDeliveryEtaPicker(order, markPaid = true)
+                        showDeliveryEtaPicker(group, markPaid = true)
                     }
                     .setNegativeButton("Not yet", null).show()
                 return@setOnClickListener
             }
-            showDeliveryEtaPicker(order, markPaid = false)
+            showDeliveryEtaPicker(group, markPaid = false)
         }
         orderView.findViewById<Button>(R.id.btnReject).setOnClickListener {
-            FirebaseHelper.updateOrderStatus(order.id, "Rejected").addOnSuccessListener {
+            FirebaseHelper.updateOrderGroupStatus(group.ids, "Rejected").addOnSuccessListener {
                 refreshOrders()
+            }.addOnFailureListener { error ->
+                Toast.makeText(this, "Could not reject order: ${error.message}", Toast.LENGTH_LONG).show()
             }
         }
         
@@ -1176,9 +1288,9 @@ class StationOwnerActivity : AppCompatActivity() {
         }
 
         val btnPrint = orderView.findViewById<MaterialButton>(R.id.btnPrintReceiptIncoming)
-        if (order.isPaid) {
+        if (group.isPaid && group.first.deliveryReceipt != null) {
             btnPrint.visibility = View.VISIBLE
-            btnPrint.setOnClickListener { ReceiptHelper.printReceipt(this, order) }
+            btnPrint.setOnClickListener { ReceiptHelper.printReceipt(this, group.items) }
         } else {
             btnPrint.visibility = View.GONE
         }
@@ -1186,7 +1298,7 @@ class StationOwnerActivity : AppCompatActivity() {
         ordersContainer.addView(orderView)
     }
 
-    private fun showDeliveryEtaPicker(order: Order, markPaid: Boolean) {
+    private fun showDeliveryEtaPicker(group: OrderGroup, markPaid: Boolean) {
         val timeZoneId = currentUserData?.operatingHours?.timeZoneId
             ?.takeIf { it.isNotBlank() }
             ?: DeliveryEta.DEFAULT_TIME_ZONE_ID
@@ -1201,12 +1313,11 @@ class StationOwnerActivity : AppCompatActivity() {
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Estimated delivery date")
-            .setMessage("Choose the date you expect to deliver this order.")
             .setItems(choices) { _, choice ->
                 when (choice) {
-                    0 -> acceptOrderWithEta(order, today, timeZoneId, markPaid)
-                    1 -> acceptOrderWithEta(order, tomorrow, timeZoneId, markPaid)
-                    else -> showCustomDeliveryDatePicker(order, timeZoneId, markPaid)
+                    0 -> acceptOrderWithEta(group, today, timeZoneId, markPaid)
+                    1 -> acceptOrderWithEta(group, tomorrow, timeZoneId, markPaid)
+                    else -> showCustomDeliveryDatePicker(group, timeZoneId, markPaid)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -1214,12 +1325,12 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun showCustomDeliveryDatePicker(
-        order: Order,
+        group: OrderGroup,
         timeZoneId: String,
         markPaid: Boolean
     ) {
         val timeZone = TimeZone.getTimeZone(timeZoneId)
-        val initialTimestamp = order.scheduledDeliveryDate
+        val initialTimestamp = group.first.scheduledDeliveryDate
             .takeIf { it > 0L && DeliveryEta.isTodayOrFuture(it, timeZoneId = timeZoneId) }
             ?: DeliveryEta.tomorrow(timeZoneId = timeZoneId)
         val initial = Calendar.getInstance(timeZone).apply { timeInMillis = initialTimestamp }
@@ -1228,7 +1339,7 @@ class StationOwnerActivity : AppCompatActivity() {
             this,
             { _, year, month, dayOfMonth ->
                 val selectedDate = DeliveryEta.fromDate(year, month, dayOfMonth, timeZoneId)
-                acceptOrderWithEta(order, selectedDate, timeZoneId, markPaid)
+                acceptOrderWithEta(group, selectedDate, timeZoneId, markPaid)
             },
             initial.get(Calendar.YEAR),
             initial.get(Calendar.MONTH),
@@ -1241,13 +1352,13 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun acceptOrderWithEta(
-        order: Order,
+        group: OrderGroup,
         estimatedDeliveryDate: Long,
         timeZoneId: String,
         markPaid: Boolean
     ) {
-        FirebaseHelper.acceptOrder(
-            orderId = order.id,
+        FirebaseHelper.acceptOrders(
+            orderIds = group.ids,
             estimatedDeliveryDate = estimatedDeliveryDate,
             estimatedDeliveryTimeZoneId = timeZoneId,
             markPaid = markPaid
@@ -1267,19 +1378,15 @@ class StationOwnerActivity : AppCompatActivity() {
         }
     }
 
-    private fun addAcceptedOrder(order: Order) {
+    private fun addAcceptedOrder(group: OrderGroup) {
+        val order = group.first
         val orderView = LayoutInflater.from(this).inflate(R.layout.item_accepted_order, acceptedOrdersContainer, false)
         val tvInfo = orderView.findViewById<TextView>(R.id.tvAcceptedOrderInfo)
         val tvPayment = orderView.findViewById<TextView>(R.id.tvAcceptedPaymentMethod)
 
-        var info = "${order.customerName}: ${order.productName}\nStatus: ${order.status}"
-        if (order.isRefill()) {
-            info = "[REFILL EXCHANGE] ${order.customerName}: " +
-                "${order.emptyContainerCount.coerceAtLeast(order.quantity)} empty ${order.containerType} container(s)" +
-                if (order.refillInstructions.isBlank()) "" else "\nNotes: ${order.refillInstructions}"
-        }
+        var info = "${order.customerName}:\n${group.itemSummary()}\nStatus: ${order.status}"
         if (order.isSubscriptionOrder) {
-            info = "[AUTOMATED DELIVERY] $info"
+            info = "[RECURRING DELIVERY] $info\n${order.recurringDeliveryNotice()}"
         }
         if (order.isRushOrder) {
             info = "[RUSH] $info"
@@ -1288,8 +1395,8 @@ class StationOwnerActivity : AppCompatActivity() {
         if (order.estimatedDeliveryDate > 0L) {
             info += "\nEstimated delivery: ${DeliveryEta.label(order.estimatedDeliveryDate, order.estimatedDeliveryTimeZoneId)}"
         }
-        tvInfo.text = info
-        tvPayment.text = "Payment: ${order.paymentMethod}${if(order.isPaid) " (PAID)" else ""}"
+        tvInfo.text = "$info\nTotal: ₱${String.format(Locale.getDefault(), "%.2f", group.totalPrice)}"
+        tvPayment.text = "Payment: ${order.paymentMethod}${if(group.isPaid) " (PAID)" else ""}"
             
         orderView.findViewById<ImageButton>(R.id.btnChatWithCustomerAccepted).setOnClickListener {
             val intent = Intent(this, SingleChatActivity::class.java)
@@ -1299,9 +1406,9 @@ class StationOwnerActivity : AppCompatActivity() {
         }
 
         val btnPrint = orderView.findViewById<MaterialButton>(R.id.btnPrintReceiptAccepted)
-        if (order.isPaid) {
+        if (group.isPaid && group.first.deliveryReceipt != null) {
             btnPrint.visibility = View.VISIBLE
-            btnPrint.setOnClickListener { ReceiptHelper.printReceipt(this, order) }
+            btnPrint.setOnClickListener { ReceiptHelper.printReceipt(this, group.items) }
         } else {
             btnPrint.visibility = View.GONE
         }
@@ -1310,9 +1417,18 @@ class StationOwnerActivity : AppCompatActivity() {
         if (btnComplete != null) {
             btnComplete.visibility = View.VISIBLE
             btnComplete.setOnClickListener {
-                FirebaseHelper.updateOrderStatus(order.id, "Delivered", isPaid = true).addOnSuccessListener {
-                    refreshOrders()
-                }
+                DeliveryReceiptEditor.show(
+                    this, group,
+                    availableProducts = products.toList(),
+                    save = { items -> FirebaseHelper.completeDeliveryWithReceipt(group.ids, currentUsername, items) },
+                    onSaved = { receipt ->
+                        refreshOrders()
+                        Toast.makeText(this, "Delivery confirmed. Receipt saved.", Toast.LENGTH_SHORT).show()
+                        ReceiptHelper.printReceipt(this, group.items.map {
+                            it.copy(status = "Delivered", isPaid = true, deliveryReceipt = receipt)
+                        })
+                    }
+                )
             }
         }
 

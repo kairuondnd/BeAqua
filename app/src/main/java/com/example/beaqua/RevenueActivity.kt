@@ -6,7 +6,6 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
@@ -27,9 +26,6 @@ class RevenueActivity : AppCompatActivity() {
     private lateinit var spinnerMonth: Spinner
     private lateinit var spinnerYear: Spinner
     private lateinit var btnBack: ImageButton
-    private lateinit var hotspotsContainer: LinearLayout
-    private lateinit var tvHotspotsStatus: TextView
-    private lateinit var btnViewHotspotsMap: MaterialButton
 
     private val allOrders = mutableListOf<Order>()
     private var weekly = true
@@ -52,9 +48,6 @@ class RevenueActivity : AppCompatActivity() {
         spinnerMonth = findViewById(R.id.spinnerMonth)
         spinnerYear = findViewById(R.id.spinnerYear)
         btnBack = findViewById(R.id.btnBackRevenue)
-        hotspotsContainer = findViewById(R.id.hotspotsContainer)
-        tvHotspotsStatus = findViewById(R.id.tvHotspotsStatus)
-        btnViewHotspotsMap = findViewById(R.id.btnViewHotspotsMap)
 
         btnBack.setOnClickListener { returnToDashboard() }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -63,12 +56,6 @@ class RevenueActivity : AppCompatActivity() {
             }
         })
         
-        btnViewHotspotsMap.setOnClickListener {
-            val intent = Intent(this, HotspotsMapActivity::class.java)
-            intent.putExtra("USERNAME", currentUsername)
-            startActivity(intent)
-        }
-
         setupSpinners()
         weekly = savedInstanceState?.getBoolean("revenueWeekly", true) ?: true
         selectedWeekDate.timeInMillis = savedInstanceState?.getLong("revenueWeekDate")
@@ -154,7 +141,6 @@ class RevenueActivity : AppCompatActivity() {
             }
             calculateStats()
             calculateFilteredRevenue()
-            calculateHotspots()
         }
     }
 
@@ -238,55 +224,4 @@ class RevenueActivity : AppCompatActivity() {
         tvSelectedOrderCount.text = "$orderCount Successful Orders"
     }
 
-    private fun getAreaFromAddress(address: String): String {
-        val parts = address.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        return when {
-            parts.size >= 4 -> parts[parts.size - 4] // Target Barangay/Village
-            parts.size >= 3 -> parts[parts.size - 3] // Fallback to City
-            parts.size >= 2 -> parts[0]
-            else -> address
-        }
-    }
-
-    private fun calculateHotspots() {
-        val areaSales = mutableMapOf<String, Int>() 
-        val areaRevenue = mutableMapOf<String, Double>()
-        val now = System.currentTimeMillis()
-        val sevenDaysMillis = 7L * 24 * 60 * 60 * 1000
-
-        for (order in allOrders) {
-            if (now - order.timestamp <= sevenDaysMillis) {
-                val area = getAreaFromAddress(order.customerAddress)
-                if (area.isNotEmpty()) {
-                    areaSales[area] = areaSales.getOrDefault(area, 0) + order.quantity
-                    areaRevenue[area] = areaRevenue.getOrDefault(area, 0.0) + order.totalPrice
-                }
-            }
-        }
-
-        val sortedHotspots = areaRevenue.entries.sortedByDescending { it.value }.take(5)
-
-        hotspotsContainer.removeAllViews()
-        if (sortedHotspots.isEmpty()) {
-            tvHotspotsStatus.text = "No sales data for the past 7 days."
-            btnViewHotspotsMap.visibility = View.GONE
-        } else {
-            tvHotspotsStatus.text = "Top performing areas this week:"
-            btnViewHotspotsMap.visibility = View.VISIBLE
-            for (entry in sortedHotspots) {
-                val itemView = layoutInflater.inflate(android.R.layout.simple_list_item_2, hotspotsContainer, false)
-                val text1 = itemView.findViewById<TextView>(android.R.id.text1)
-                val text2 = itemView.findViewById<TextView>(android.R.id.text2)
-
-                text1.text = entry.key
-                text1.setTextColor(getColor(R.color.text_primary))
-                text1.textSize = 16f
-                
-                text2.text = String.format(Locale.getDefault(), "₱%,.2f revenue (%d units sold)", entry.value, areaSales[entry.key])
-                text2.setTextColor(getColor(R.color.text_secondary))
-                
-                hotspotsContainer.addView(itemView)
-            }
-        }
-    }
 }
