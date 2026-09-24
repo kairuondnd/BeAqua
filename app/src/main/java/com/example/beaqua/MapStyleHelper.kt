@@ -23,7 +23,9 @@ object MapStyleHelper {
         // Keep street labels neutral while making water, parks, and main roads more distinct.
         val saturation = if (showPointOfInterestLabels) 0.20 else 0.0
         val contrast = if (showPointOfInterestLabels) 0.08 else 0.0
-        val accessToken = Uri.encode(mapView.context.getString(R.string.mapbox_access_token).trim())
+        val token = mapView.context.getString(R.string.mapbox_access_token).trim()
+        com.mapbox.common.MapboxOptions.accessToken = token
+        val accessToken = Uri.encode(token)
         val tileUrl = "https://api.mapbox.com/styles/v1/mapbox/$mapStyle/tiles/512/" +
             "{z}/{x}/{y}@2x?access_token=$accessToken"
         val styleJson = """

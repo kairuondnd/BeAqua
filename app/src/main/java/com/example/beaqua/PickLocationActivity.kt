@@ -132,6 +132,7 @@ class PickLocationActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_NO
+        com.mapbox.common.MapboxOptions.accessToken = getString(R.string.mapbox_access_token)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_pick_location)
 
