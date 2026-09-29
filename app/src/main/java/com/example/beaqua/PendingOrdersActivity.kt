@@ -27,12 +27,13 @@ class PendingOrdersActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_pending_orders)
 
         username = intent.getStringExtra("USERNAME") ?: ""
 
         val btnBack = findViewById<ImageButton>(R.id.btnBackPending)
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         rvPendingOrders = findViewById(R.id.rvPendingOrders)
         layoutEmpty = findViewById(R.id.headerPending)

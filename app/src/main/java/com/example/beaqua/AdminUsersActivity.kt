@@ -25,10 +25,11 @@ class AdminUsersActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_admin_users)
 
         val btnBack = findViewById<ImageButton>(R.id.btnBackAdminUsers)
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         val rvUsers = findViewById<RecyclerView>(R.id.rvUsers)
         etName = findViewById(R.id.etUserName)

@@ -42,7 +42,7 @@ class KycSubmissionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_kyc_submission)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = returnToLogin()
+            override fun handleOnBackPressed() = BackNavigation.goBack(this@KycSubmissionActivity)
         })
 
         username = intent.getStringExtra("USERNAME").orEmpty()
@@ -68,7 +68,7 @@ class KycSubmissionActivity : AppCompatActivity() {
             mayorsPicker.launch(arrayOf("application/pdf", "image/*"))
         }
         findViewById<MaterialButton>(R.id.btnCancelKycSubmission).setOnClickListener {
-            returnToLogin()
+            onBackPressedDispatcher.onBackPressed()
         }
 
         submitButton.setOnClickListener {

@@ -16,6 +16,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (RememberedSession.exists(this)) {
+            startActivity(Intent(this, LoginActivity::class.java).putExtra("RESTORE_SESSION", true))
+            finish()
+            return
+        }
         setContentView(R.layout.activity_main)
 
         val tagline = findViewById<TextView>(R.id.tagline)

@@ -4,6 +4,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OrderGroupTest {
+    @Test fun historyKeepsCheckoutTogetherAcrossItemStatusAndPaymentChanges() {
+        val group = groupOrderHistory(listOf(
+            first.copy(checkoutId = "same", status = "Delivered", isPaid = true),
+            second.copy(checkoutId = "same", status = "Accepted", timestamp = 1001L)
+        )).single()
+        assertEquals(2, group.items.size)
+        assertEquals(110.0, group.totalPrice, 0.001)
+        assertFalse(group.isPaid)
+    }
+
+    @Test fun historyDoesNotMergeSeparateCheckoutsOrStations() {
+        assertEquals(2, groupOrderHistory(listOf(
+            first.copy(checkoutId = "a"), second.copy(checkoutId = "b")
+        )).size)
+        assertEquals(2, groupOrderHistory(listOf(first, second.copy(stationOwnerUsername = "other"))).size)
+        assertEquals(2, groupOrderHistory(listOf(first, second.copy(timestamp = 1001L))).size)
+    }
+
+    @Test fun legacyHistoryGroupsExactCheckoutTimeButNotMissingDates() {
+        assertEquals(1, groupOrderHistory(listOf(first, second)).size)
+        assertEquals(2, groupOrderHistory(listOf(first.copy(timestamp = 0), second.copy(timestamp = 0))).size)
+    }
+
     private val first = Order(
         id = "one", customerName = "user1", stationOwnerUsername = "station1",
         timestamp = 1000L, productName = "Water1", quantity = 2,

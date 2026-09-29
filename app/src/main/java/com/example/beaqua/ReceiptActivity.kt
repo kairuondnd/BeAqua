@@ -36,6 +36,7 @@ class ReceiptActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(240, 245, 249))
@@ -59,7 +60,7 @@ class ReceiptActivity : AppCompatActivity() {
         setContentView(layout)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        toolbar.setNavigationOnClickListener { finish() }
+        toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
         loadReceipt()
     }
 

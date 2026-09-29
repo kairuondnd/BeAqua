@@ -135,6 +135,14 @@
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRestrictedAdminChat"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="24dp"
+            android:text="Chat with admin"
+            android:textAllCaps="false" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnRestrictedRefresh"
             android:layout_width="match_parent"
             android:layout_height="56dp"

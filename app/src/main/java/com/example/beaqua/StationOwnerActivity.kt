@@ -27,6 +27,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 class StationOwnerActivity : AppCompatActivity() {
+    private var showingHomeContent = true
 
     private lateinit var drawerLayout: DrawerLayout
     private val products = mutableListOf<Product>()
@@ -90,6 +91,12 @@ class StationOwnerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this) {
+            if (!showingHomeContent && currentUserData?.isApprovedStationOwner() == true) {
+                loadDashboard()
+                true
+            } else false
+        }
         setContentView(R.layout.activity_station_owner)
 
         currentUsername = intent.getStringExtra("USERNAME") ?: ""
@@ -202,16 +209,20 @@ class StationOwnerActivity : AppCompatActivity() {
             R.id.navStationInventory,
             R.id.navStationAnalytics,
             R.id.navStationSettings,
-            R.id.navStationMessages,
             R.id.navStationHistory,
             R.id.navStationFeedbacks,
             R.id.btnSideOrders,
             R.id.btnSideInventory,
             R.id.btnSideAnalytics,
-            R.id.btnSideMessages,
             R.id.btnSideSettings
         )
         restrictedItems.forEach { findViewById<View>(it).visibility = View.GONE }
+        val openAdminChat = View.OnClickListener {
+            AdminChat.open(this, currentUsername, AdminChat.USERNAME)
+            drawerLayout.closeDrawer(GravityCompat.END)
+        }
+        findViewById<View>(R.id.navStationMessages).setOnClickListener(openAdminChat)
+        findViewById<View>(R.id.btnSideMessages).setOnClickListener(openAdminChat)
 
         val openProfile = View.OnClickListener {
             startActivity(
@@ -240,6 +251,9 @@ class StationOwnerActivity : AppCompatActivity() {
             user.emailAddress.ifBlank { "No business email saved" }
 
         val completeDocuments = user.hasCompleteKycDocuments()
+        restrictedView.findViewById<MaterialButton>(R.id.btnRestrictedAdminChat).setOnClickListener {
+            AdminChat.open(this, currentUsername, AdminChat.USERNAME)
+        }
         restrictedView.findViewById<TextView>(R.id.tvRestrictedMessage).text = when {
             user.kycStatus == User.KYC_REJECTED ->
                 "Your KYC application was not approved. Update and resubmit all required " +
@@ -321,6 +335,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun logoutStationOwner() {
+        RememberedSession.clear(this)
         startActivity(
             Intent(this, LoginActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -461,6 +476,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun loadDashboard() {
+        showingHomeContent = true
         val dashboardView = layoutInflater.inflate(R.layout.station_owner_home, null)
         val contentFrame = findViewById<FrameLayout>(R.id.stationContentFrame)
         contentFrame.removeAllViews()
@@ -813,6 +829,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun loadOrdersView(onlyPending: Boolean) {
+        showingHomeContent = false
         FirebaseHelper.processDueSubscriptions(stationOwnerUsername = currentUsername)
         isShowingOnlyPending = onlyPending
         val ordersView = layoutInflater.inflate(R.layout.station_owner_home, null)
@@ -831,6 +848,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun loadInventoryControls() {
+        showingHomeContent = false
         val inventoryView = layoutInflater.inflate(R.layout.station_owner_home, null)
         val contentFrame = findViewById<FrameLayout>(R.id.stationContentFrame)
         contentFrame.removeAllViews()
@@ -991,6 +1009,7 @@ class StationOwnerActivity : AppCompatActivity() {
     }
 
     private fun loadStationSettings() {
+        showingHomeContent = false
         val etaView = layoutInflater.inflate(R.layout.station_owner_home, null)
         val contentFrame = findViewById<FrameLayout>(R.id.stationContentFrame)
         contentFrame.removeAllViews()

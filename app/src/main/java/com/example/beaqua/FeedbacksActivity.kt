@@ -23,6 +23,7 @@ class FeedbacksActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_feedbacks)
 
         currentUsername = intent.getStringExtra("USERNAME") ?: ""
@@ -32,7 +33,7 @@ class FeedbacksActivity : AppCompatActivity() {
         val btnBack = findViewById<ImageButton>(R.id.btnBackFeedbacks)
         val btnMenu = findViewById<ImageButton>(R.id.btnMenuFeedbacks)
 
-        btnBack?.setOnClickListener { finish() }
+        btnBack?.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         btnMenu?.setOnClickListener {
             drawerLayout.openDrawer(GravityCompat.END)
         }
@@ -83,6 +84,7 @@ class FeedbacksActivity : AppCompatActivity() {
         }
 
         btnLogout.setOnClickListener {
+            RememberedSession.clear(this)
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)

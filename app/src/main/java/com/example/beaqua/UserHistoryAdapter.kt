@@ -17,8 +17,9 @@ import java.util.Locale
 class UserHistoryAdapter(
     private var historyList: List<Order>,
     private val role: String = "User",
-    private val onRateClick: (Order) -> Unit
+    private val onRateClick: (List<Order>) -> Unit
 ) : RecyclerView.Adapter<UserHistoryAdapter.HistoryViewHolder>() {
+    private var groups = groupOrderHistory(historyList)
 
     class HistoryViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvProductName: TextView = itemView.findViewById(R.id.tvProductName)
@@ -44,11 +45,13 @@ class UserHistoryAdapter(
 
     fun updateData(newList: List<Order>) {
         this.historyList = newList.toList()
+        groups = groupOrderHistory(historyList)
         notifyDataSetChanged()
     }
 
     override fun onBindViewHolder(holder: HistoryViewHolder, position: Int) {
-        val order = historyList[position]
+        val group = groups[position]
+        val order = group.first
         val context = holder.itemView.context
         
         val servicePrefix = if (order.isRefill()) "REFILL • " else ""
@@ -80,6 +83,20 @@ class UserHistoryAdapter(
             }
         holder.tvPaymentMethod.text = "Payment: ${order.paymentMethod}${if (order.isPaid) " (Paid)" else ""}"
         holder.tvStatus.text = order.status.uppercase()
+
+        val statuses = group.items.map { it.status }.distinct()
+        holder.tvProductName.text = if (group.items.size == 1) holder.tvProductName.text
+            else if (order.isSubscriptionOrder) "Recurring order" else "Order"
+        holder.tvQuantity.text = "${group.items.sumOf { it.quantity }} units · ${group.items.size} item(s)"
+        holder.tvTotalPrice.text = String.format(Locale.getDefault(), "₱%.2f", group.totalPrice)
+        holder.tvOrderDetails.text = group.itemSummary() +
+            if (statuses.size > 1) "\n" + group.items.joinToString("\n") { "${it.productName}: ${it.status}" }
+            else if (order.estimatedDeliveryDate > 0L)
+                "\nEstimated delivery: ${DeliveryEta.label(order.estimatedDeliveryDate, order.estimatedDeliveryTimeZoneId)}"
+            else ""
+        holder.tvPaymentMethod.text = "Payment: ${group.items.map { it.paymentMethod }.distinct().joinToString(", ")}" +
+            if (group.isPaid) " (Paid)" else if (group.items.any { it.isPaid }) " (Partially paid)" else ""
+        holder.tvStatus.text = if (statuses.size == 1) statuses.first().uppercase() else "MIXED STATUS"
         
         // Customer Info Logic (Station Owner View)
         if (role != "User") {
@@ -90,14 +107,18 @@ class UserHistoryAdapter(
         }
 
         // Rating Logic
-        if (role == "User" && order.status == "Delivered") {
-            if (order.isRated) {
+        val deliveredItems = group.items.filter { it.status == "Delivered" }
+        val unrated = deliveredItems.filterNot { it.isRated }
+        if (role == "User" && deliveredItems.isNotEmpty()) {
+            if (unrated.isEmpty()) {
                 holder.btnRateOrder.visibility = View.GONE
                 holder.tvAlreadyRated.visibility = View.VISIBLE
             } else {
                 holder.btnRateOrder.visibility = View.VISIBLE
                 holder.tvAlreadyRated.visibility = View.GONE
-                holder.btnRateOrder.setOnClickListener { onRateClick(order) }
+                holder.btnRateOrder.setOnClickListener {
+                    onRateClick(deliveredItems)
+                }
             }
         } else {
             holder.btnRateOrder.visibility = View.GONE
@@ -105,10 +126,10 @@ class UserHistoryAdapter(
         }
 
         // Receipt Printing Logic
-        if (order.isPaid) {
+        if (group.isPaid) {
             holder.btnPrintReceipt.visibility = View.VISIBLE
             holder.btnPrintReceipt.setOnClickListener {
-                ReceiptHelper.printReceipt(context, order)
+                ReceiptHelper.printReceipt(context, group.items)
             }
         } else {
             holder.btnPrintReceipt.visibility = View.GONE
@@ -116,7 +137,7 @@ class UserHistoryAdapter(
         
         val statusColor: Int
         val statusBg: String
-        when (order.status) {
+        when (statuses.singleOrNull()) {
             "Delivered" -> { statusColor = R.color.success; statusBg = "#F0FDF4" }
             "Pending" -> { statusColor = R.color.warning; statusBg = "#FFFBEB" }
             "Accepted" -> { statusColor = R.color.primary; statusBg = "#EFF6FF" }
@@ -129,5 +150,5 @@ class UserHistoryAdapter(
         holder.tvStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor(statusBg))
     }
 
-    override fun getItemCount(): Int = historyList.size
+    override fun getItemCount(): Int = groups.size
 }

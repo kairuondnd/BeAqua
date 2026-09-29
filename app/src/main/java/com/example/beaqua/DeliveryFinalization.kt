@@ -27,12 +27,18 @@ object DeliveryFinalization {
     fun firstDeliveryAfter(
         now: Long,
         intervalDays: Int,
-        hours: OperatingHours
+        hours: OperatingHours,
+        weekdays: List<Int> = emptyList()
     ): Long {
         require(intervalDays in 1..3650)
+        require(weekdays.all { it in Calendar.SUNDAY..Calendar.SATURDAY }) { "Select valid delivery days" }
         return Calendar.getInstance(TimeZone.getTimeZone(hours.timeZoneId)).apply {
             timeInMillis = now
-            add(Calendar.DAY_OF_YEAR, intervalDays)
+            if (weekdays.isEmpty()) add(Calendar.DAY_OF_YEAR, intervalDays)
+            else {
+                do { add(Calendar.DAY_OF_YEAR, 1) }
+                while (get(Calendar.DAY_OF_WEEK) !in weekdays)
+            }
             set(Calendar.HOUR_OF_DAY, 6)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
@@ -67,13 +73,16 @@ object DeliveryFinalization {
     fun shouldRemind(deliveryAt: Long, hours: OperatingHours, now: Long): Boolean =
         now >= reminderAt(deliveryAt, hours) && canEdit(deliveryAt, hours, now)
 
-    fun nextDelivery(deliveryAt: Long, intervalDays: Int, hours: OperatingHours, now: Long): Long {
+    fun nextDelivery(deliveryAt: Long, intervalDays: Int, hours: OperatingHours, now: Long,
+                     weekdays: List<Int> = emptyList()): Long {
         require(intervalDays in 1..3650)
+        require(weekdays.all { it in Calendar.SUNDAY..Calendar.SATURDAY }) { "Select valid delivery days" }
         val date = Calendar.getInstance(TimeZone.getTimeZone(hours.timeZoneId)).apply {
             timeInMillis = deliveryAt
         }
-        do { date.add(Calendar.DAY_OF_YEAR, intervalDays) }
-        while (cutoff(date.timeInMillis, hours) <= now)
+        do { date.add(Calendar.DAY_OF_YEAR, if (weekdays.isEmpty()) intervalDays else 1) }
+        while ((weekdays.isNotEmpty() && date.get(Calendar.DAY_OF_WEEK) !in weekdays) ||
+            cutoff(date.timeInMillis, hours) <= now)
         return date.timeInMillis
     }
 }

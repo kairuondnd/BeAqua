@@ -44,6 +44,29 @@
             android:background="@color/divider"
             android:layout_marginVertical="12dp" />
 
+        <TextView
+            android:id="@+id/tvFeedbackProduct"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+        <TextView
+            android:id="@+id/tvProductQualityLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Product quality"
+            android:textColor="@color/text_secondary" />
+        <RatingBar
+            android:id="@+id/ratingProductQualityView"
+            style="?android:attr/ratingBarStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:isIndicator="true"
+            android:numStars="5"
+            android:progressTint="@color/warning"
+            android:layout_marginBottom="12dp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -55,9 +78,10 @@
                 android:layout_weight="1"
                 android:orientation="vertical">
                 <TextView
+                    android:id="@+id/tvServiceQualityLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Station Rating"
+                    android:text="Service quality"
                     android:textSize="11sp"
                     android:textAllCaps="true"
                     android:letterSpacing="0.05"

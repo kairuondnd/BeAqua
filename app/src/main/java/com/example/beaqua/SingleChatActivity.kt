@@ -26,6 +26,7 @@ class SingleChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_single_chat)
 
         rvMessages = findViewById(R.id.rvMessages)
@@ -34,12 +35,17 @@ class SingleChatActivity : AppCompatActivity() {
         chatPartnerName = findViewById(R.id.tvChatPartnerName)
         btnBack = findViewById(R.id.btnBackChat)
 
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         currentUsername = intent.getStringExtra("CURRENT_USERNAME") ?: return
         chatWithUsername = intent.getStringExtra("CHAT_WITH_USERNAME") ?: return
+        if (currentUsername.isBlank() || chatWithUsername.isBlank() || currentUsername == chatWithUsername) {
+            finish()
+            return
+        }
 
-        FirebaseHelper.getUser(chatWithUsername).addOnSuccessListener { doc ->
+        chatPartnerName.text = if (chatWithUsername == AdminChat.USERNAME) "BeAqua Admin" else chatWithUsername
+        if (chatWithUsername != AdminChat.USERNAME) FirebaseHelper.getUser(chatWithUsername).addOnSuccessListener { doc ->
             val partner = doc.toObject(User::class.java)
             chatPartnerName.text = partner?.name ?: chatWithUsername
         }
@@ -55,13 +61,18 @@ class SingleChatActivity : AppCompatActivity() {
         btnSend.setOnClickListener {
             val msgText = etMessage.text.toString().trim()
             if (msgText.isNotEmpty()) {
+                btnSend.isEnabled = false
                 val message = Message(
                     senderUsername = currentUsername,
                     receiverUsername = chatWithUsername,
                     message = msgText
                 )
                 FirebaseHelper.sendMessage(message).addOnSuccessListener {
-                    etMessage.text.clear()
+                    if (etMessage.text.toString().trim() == msgText) etMessage.text.clear()
+                }.addOnFailureListener {
+                    android.widget.Toast.makeText(this, "Message not sent: ${it.message}. Please try again.", android.widget.Toast.LENGTH_LONG).show()
+                }.addOnCompleteListener {
+                    btnSend.isEnabled = true
                 }
             }
         }
@@ -71,12 +82,18 @@ class SingleChatActivity : AppCompatActivity() {
         // Real-time listening for messages
         messageListener = FirebaseHelper.getMessagesBetween(currentUsername, chatWithUsername)
             .addSnapshotListener { snapshot, e ->
-                if (snapshot == null) return@addSnapshotListener
+                if (snapshot == null) {
+                    if (e != null) android.widget.Toast.makeText(this, "Could not load messages: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                    return@addSnapshotListener
+                }
                 
                 val fetchedMessages = snapshot.toObjects(Message::class.java)
                 messages.clear()
                 // Sort locally to avoid Firestore index requirement
-                messages.addAll(fetchedMessages.sortedBy { it.timestamp })
+                messages.addAll(fetchedMessages.filter {
+                    (it.senderUsername == currentUsername && it.receiverUsername == chatWithUsername) ||
+                        (it.senderUsername == chatWithUsername && it.receiverUsername == currentUsername)
+                }.sortedBy { it.timestamp })
                 
                 adapter.notifyDataSetChanged()
                 if (messages.isNotEmpty()) {

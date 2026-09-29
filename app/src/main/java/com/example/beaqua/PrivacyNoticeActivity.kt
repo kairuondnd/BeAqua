@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 class PrivacyNoticeActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -57,6 +58,6 @@ class PrivacyNoticeActivity : AppCompatActivity() {
         setContentView(root)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        toolbar.setNavigationOnClickListener { finish() }
+        toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
     }
 }

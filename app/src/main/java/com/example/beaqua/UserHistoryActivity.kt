@@ -32,6 +32,7 @@ class UserHistoryActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_user_history)
 
         val username = intent.getStringExtra("USERNAME") ?: ""
@@ -40,7 +41,7 @@ class UserHistoryActivity : AppCompatActivity() {
         
         // Initialize UI
         val btnBack = findViewById<MaterialCardView>(R.id.btnBackHistory)
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         val tvTitle = findViewById<TextView>(R.id.tvHistoryTitle)
         tabLayout = findViewById(R.id.tabLayoutHistory)
@@ -133,14 +134,17 @@ class UserHistoryActivity : AppCompatActivity() {
     }
 
     private fun filterOrders(tabPosition: Int) {
-        val newFilteredList = when (tabPosition) {
-            0 -> fullHistoryList.toList() // All
-            1 -> fullHistoryList.filter { it.status == "Pending" } // Pending
-            2 -> fullHistoryList.filter { it.status == "Accepted" } // To Receive / Active
-            3 -> fullHistoryList.filter { it.status == "Delivered" } // Completed
-            4 -> fullHistoryList.filter { it.status == "Rejected" } // Rejected
-            else -> fullHistoryList.toList()
+        val selectedStatus = when (tabPosition) {
+            1 -> "Pending"
+            2 -> "Accepted"
+            3 -> "Delivered"
+            4 -> "Rejected"
+            else -> null
         }
+        // Keep the entire checkout visible, including when older items have mixed statuses.
+        val newFilteredList = groupOrderHistory(fullHistoryList)
+            .filter { group -> selectedStatus == null || group.items.any { it.status == selectedStatus } }
+            .flatMap { it.items }
 
         filteredList.clear()
         filteredList.addAll(newFilteredList)
@@ -168,24 +172,28 @@ class UserHistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFeedbackDialog(order: Order) {
+    private fun showFeedbackDialog(orders: List<Order>) {
+        val order = orders.first()
         val dialog = BottomSheetDialog(this)
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_feedback, null)
-        dialog.setContentView(view)
+        dialog.setContentView(android.widget.ScrollView(this).apply { addView(view) })
 
         val tvStationName = view.findViewById<TextView>(R.id.tvStationNameFeedback)
         val ratingStation = view.findViewById<RatingBar>(R.id.ratingStation)
+        val ratingProduct = view.findViewById<RatingBar>(R.id.ratingProductQuality)
         val etComment = view.findViewById<EditText>(R.id.etFeedbackComment)
         val btnSubmit = view.findViewById<MaterialButton>(R.id.btnSubmitFeedback)
 
-        tvStationName.text = order.stationName.ifEmpty { order.stationOwnerUsername }
+        tvStationName.text = "${order.stationName.ifEmpty { order.stationOwnerUsername }}\n" +
+            orders.joinToString("\n") { "${it.productName} (Qty: ${it.quantity})" }
 
         btnSubmit.setOnClickListener {
             val stationRating = ratingStation.rating
-            val comment = etComment.text.toString()
+            val productRating = ratingProduct.rating
+            val comment = etComment.text.toString().trim()
 
-            if (stationRating == 0f) {
-                Toast.makeText(this, "Please rate the water station", Toast.LENGTH_SHORT).show()
+            if (stationRating == 0f || productRating == 0f) {
+                Toast.makeText(this, "Please rate both product quality and service quality", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -193,18 +201,23 @@ class UserHistoryActivity : AppCompatActivity() {
                 orderId = order.id,
                 customerUsername = order.customerName,
                 stationOwnerUsername = order.stationOwnerUsername,
-                stationRating = stationRating,
+                stationRating = (stationRating + productRating) / 2f,
+                productQualityRating = productRating,
+                serviceQualityRating = stationRating,
+                productName = order.productName,
                 remarks = comment,
                 timestamp = System.currentTimeMillis()
             )
 
-            FirebaseHelper.addFeedback(feedback).addOnSuccessListener {
-                FirebaseHelper.markOrderAsRated(order.id).addOnSuccessListener {
+            btnSubmit.isEnabled = false
+            btnSubmit.text = "Submitting..."
+            FirebaseHelper.addFeedback(feedback, orders.map { it.id }).addOnSuccessListener {
                     dialog.dismiss()
                     Toast.makeText(this, "Thank you for your feedback!", Toast.LENGTH_SHORT).show()
-                }
-            }.addOnFailureListener {
-                Toast.makeText(this, "Failed to submit feedback", Toast.LENGTH_SHORT).show()
+            }.addOnFailureListener { error ->
+                btnSubmit.isEnabled = true
+                btnSubmit.text = "Submit feedback"
+                Toast.makeText(this, error.message ?: "Failed to submit feedback", Toast.LENGTH_LONG).show()
             }
         }
 

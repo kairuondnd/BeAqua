@@ -23,5 +23,9 @@ object AdminCredentialStore {
             .edit()
             .putString(PASSWORD_HASH, PasswordHelper.hash(newPassword))
             .apply()
+        RememberedSession.clear(context)
     }
+
+    fun sessionCredential(context: Context): String = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        .getString(PASSWORD_HASH, "").orEmpty()
 }

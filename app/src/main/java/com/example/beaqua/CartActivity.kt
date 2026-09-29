@@ -39,6 +39,7 @@ class CartActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         savedInstanceState?.getString("completedCheckoutItems")?.let { json ->
             val items = org.json.JSONArray(json)
             completedCheckoutItems = (0 until items.length()).map { index ->
@@ -54,7 +55,7 @@ class CartActivity : AppCompatActivity() {
         val toolbar = findViewById<Toolbar>(R.id.toolbarCart)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        toolbar.setNavigationOnClickListener { finish() }
+        toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         rvCartItems = findViewById(R.id.rvCartItems)
         tvCartTotal = findViewById(R.id.tvCartTotal)
@@ -87,7 +88,7 @@ class CartActivity : AppCompatActivity() {
         }
 
         btnCheckout.setOnClickListener { showPaymentMethodDialog() }
-        findViewById<MaterialButton>(R.id.btnStartShopping).setOnClickListener { finish() }
+        findViewById<MaterialButton>(R.id.btnStartShopping).setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         switchRushOrder.setOnCheckedChangeListener { _, _ -> updateTotal() }
     }
 

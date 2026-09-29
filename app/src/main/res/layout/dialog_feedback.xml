@@ -27,7 +27,7 @@
         android:id="@+id/tvFeedbackSubtitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Your feedback helps us improve our service."
+        android:text="Rate the product and the service separately. 1 star = Poor, 5 stars = Excellent."
         android:textColor="@color/text_secondary"
         android:textSize="14sp"
         android:layout_marginBottom="24dp"/>
@@ -50,6 +50,39 @@
         android:textSize="13sp"
         android:layout_marginBottom="8dp"/>
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Product quality"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Water taste and freshness, container cleanliness, and item condition."
+        android:textColor="@color/text_secondary" />
+    <RatingBar
+        android:id="@+id/ratingProductQuality"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:numStars="5"
+        android:stepSize="1"
+        android:contentDescription="Product quality, 1 to 5 stars"
+        android:progressTint="@color/warning"
+        android:layout_marginBottom="16dp" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Service quality"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Delivery punctuality, order accuracy, communication, and staff courtesy."
+        android:textColor="@color/text_secondary" />
     <RatingBar
         android:id="@+id/ratingStation"
         android:layout_width="wrap_content"
@@ -58,7 +91,7 @@
         android:stepSize="1"
         android:progressTint="@color/warning"
         android:layout_marginBottom="20dp"
-        style="?android:attr/ratingBarStyleIndicator"
+        android:contentDescription="Service quality, 1 to 5 stars"
         android:isIndicator="false"/>
 
     <!-- Comments -->
@@ -66,7 +99,7 @@
         style="@style/AppTextInputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Leave a comment (optional)"
+        android:hint="What went well or could improve? (optional)"
         android:layout_marginBottom="24dp">
 
         <com.google.android.material.textfield.TextInputEditText

@@ -20,6 +20,8 @@ data class WeeklySubscription(
     var productName: String = "",
     var quantity: Int = 1,
     var repeatEveryDays: Int = 7,
+    // Calendar weekday numbers: Sunday = 1 through Saturday = 7. Empty uses the interval.
+    var deliveryWeekdays: List<Int> = emptyList(),
     var containerType: String = "",
     var deliveryDay: String = "",
     var deliveryTimeSlot: String = "",
@@ -53,4 +55,11 @@ fun WeeklySubscription.deliveryItems(): List<RecurringDeliveryItem> {
             containerType = containerType.ifBlank { productName }
         )
     )
+}
+
+fun WeeklySubscription.scheduleLabel(): String = if (deliveryWeekdays.isEmpty()) {
+    "Every $repeatEveryDays day(s)"
+} else {
+    val names = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+    "Every " + deliveryWeekdays.distinct().sorted().filter { it in 1..7 }.joinToString(", ") { names[it - 1] }
 }

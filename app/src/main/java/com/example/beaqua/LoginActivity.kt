@@ -18,6 +18,7 @@ import com.google.android.material.textfield.TextInputLayout
 import java.util.concurrent.TimeUnit
 
 class LoginActivity : AppCompatActivity() {
+    private var rememberForLogin = false
 
     companion object {
         private const val ADMIN_USERNAME = "admin"
@@ -25,8 +26,8 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DeliveryReminderWorker.clear(this)
-        SubscriptionOrderWorker.clearAccount(this)
+        BackNavigation.install(this)
+        if (!intent.getBooleanExtra("RESTORE_SESSION", false)) clearAccountWork()
         setContentView(R.layout.activity_login)
 
         val ivLoginLogo = findViewById<ImageView>(R.id.ivLoginLogo)
@@ -38,6 +39,7 @@ class LoginActivity : AppCompatActivity() {
 
         val etUsername = findViewById<EditText>(R.id.etUsername)
         val etPassword = findViewById<EditText>(R.id.etPassword)
+        val keepSignedIn = findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.cbKeepSignedIn)
 
         val popAnimation = AnimationUtils.loadAnimation(this, R.anim.scale_up_pop)
         val slideUp = AnimationUtils.loadAnimation(this, R.anim.slide_up)
@@ -64,9 +66,10 @@ class LoginActivity : AppCompatActivity() {
             btnLogin.startAnimation(slideUp)
         }, 600)
 
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         btnLogin.setOnClickListener {
+            rememberForLogin = keepSignedIn.isChecked
             val username = etUsername.text.toString().trim()
             val password = etPassword.text.toString().trim()
 
@@ -82,8 +85,7 @@ class LoginActivity : AppCompatActivity() {
                     runOnUiThread {
                         setLoginBusy(btnLogin, false)
                         if (passwordMatches) {
-                            startActivity(Intent(this, AdminActivity::class.java))
-                            finish()
+                            completeLogin("admin", "Admin", AdminCredentialStore.sessionCredential(this))
                         } else {
                             Toast.makeText(
                                 this,
@@ -107,13 +109,7 @@ class LoginActivity : AppCompatActivity() {
                         authenticateStationOwner(user, password, btnLogin)
                     } else if (user.password == password) {
                         scheduleWaterReminder()
-                        startActivity(
-                            Intent(this, UserHomeActivity::class.java).apply {
-                                putExtra("USERNAME", user.username)
-                                putExtra("ACCOUNT_TYPE", user.accountType)
-                            }
-                        )
-                        finish()
+                        completeLogin(user.username, user.accountType, user.password)
                     } else {
                         Toast.makeText(this, "Incorrect password", Toast.LENGTH_SHORT).show()
                     }
@@ -125,6 +121,7 @@ class LoginActivity : AppCompatActivity() {
                 Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
+        if (intent.getBooleanExtra("RESTORE_SESSION", false)) restoreSession()
     }
 
     private fun authenticateStationOwner(
@@ -149,18 +146,22 @@ class LoginActivity : AppCompatActivity() {
             ) PasswordHelper.hash(password) else null
 
             runOnUiThread {
-                setLoginBusy(loginButton, false)
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (!passwordMatches) {
+                    setLoginBusy(loginButton, false)
                     Toast.makeText(this, "Incorrect password", Toast.LENGTH_LONG).show()
                     return@runOnUiThread
                 }
 
                 if (upgradedHash != null) {
-                    user.password = upgradedHash
                     FirebaseHelper.usersCollection.document(user.username).update(
                         "password",
                         upgradedHash
-                    )
+                    ).addOnCompleteListener { upgraded ->
+                        if (upgraded.isSuccessful) user.password = upgradedHash
+                        continueStationOwnerLogin(user)
+                    }
+                    return@runOnUiThread
                 }
                 continueStationOwnerLogin(user)
             }
@@ -168,17 +169,76 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun continueStationOwnerLogin(user: User) {
-        startActivity(
-            Intent(this, StationOwnerActivity::class.java).apply {
-                putExtra("USERNAME", user.username)
-                putExtra("ACCOUNT_TYPE", user.accountType)
-            }
-        )
+        completeLogin(user.username, user.accountType, user.password)
+    }
+
+    private fun completeLogin(username: String, role: String, credential: String) {
+        if (isFinishing || isDestroyed) return
+        try {
+            RememberedSession.save(this, username, role, credential, rememberForLogin)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Signed in, but this device could not remember the session.", Toast.LENGTH_LONG).show()
+        }
+        startActivity(RememberedSession.destination(this, username, role))
         finish()
+    }
+
+    private fun clearAccountWork() {
+        DeliveryReminderWorker.clear(this)
+        SubscriptionOrderWorker.clearAccount(this)
+    }
+
+    private fun restoreSession() {
+        val account = RememberedSession.read(this)
+        if (account == null) {
+            clearAccountWork()
+            return
+        }
+        val button = findViewById<MaterialButton>(R.id.btnLoginLoginPage)
+        setLoginBusy(button, true)
+        fun invalidSession() {
+            RememberedSession.clear(this)
+            clearAccountWork()
+            setLoginBusy(button, false)
+            Toast.makeText(this, "Please sign in again.", Toast.LENGTH_SHORT).show()
+        }
+        fun openAccount() {
+            if (isFinishing || isDestroyed) return
+            startActivity(RememberedSession.destination(this, account.username, account.role))
+            finish()
+        }
+        if (account.role == "Admin") {
+            if (account.credentialFingerprint == RememberedSession.fingerprint(AdminCredentialStore.sessionCredential(this)))
+                openAccount() else invalidSession()
+            return
+        }
+        // A server read prevents a deleted account or an old password from restoring from cached data.
+        FirebaseHelper.usersCollection.document(account.username)
+            .get(com.google.firebase.firestore.Source.SERVER)
+            .addOnSuccessListener { document ->
+                if (isFinishing || isDestroyed) return@addOnSuccessListener
+                val user = document.toObject(User::class.java)
+                if (user == null || user.accountType != account.role ||
+                    account.credentialFingerprint != RememberedSession.fingerprint(user.password)) {
+                    invalidSession()
+                } else openAccount()
+            }.addOnFailureListener {
+                if (isFinishing || isDestroyed) return@addOnFailureListener
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Unable to restore sign-in")
+                    .setMessage("Connect to the internet to check your saved account, then try again.")
+                    .setPositiveButton("Retry") { _, _ -> restoreSession() }
+                    .setNegativeButton("Sign in manually") { _, _ ->
+                        RememberedSession.clear(this)
+                        clearAccountWork()
+                        setLoginBusy(button, false)
+                    }.setCancelable(false).show()
+            }
     }
 
     private fun setLoginBusy(button: MaterialButton, busy: Boolean) {
         button.isEnabled = !busy
+        findViewById<View>(R.id.cbKeepSignedIn).isEnabled = !busy
         button.text = if (busy) "Signing in..." else "Sign in"
     }
 

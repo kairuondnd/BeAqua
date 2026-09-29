@@ -22,6 +22,7 @@ class SubscriptionActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_subscriptions)
 
         username = intent.getStringExtra("USERNAME").orEmpty()
@@ -41,8 +42,8 @@ class SubscriptionActivity : AppCompatActivity() {
         emptyState = findViewById(R.id.emptySubscriptions)
         recyclerView.layoutManager = LinearLayoutManager(this)
 
-        findViewById<ImageButton>(R.id.btnBackSubscriptions).setOnClickListener { finish() }
-        findViewById<MaterialButton>(R.id.btnBrowseForSubscription).setOnClickListener { finish() }
+        findViewById<ImageButton>(R.id.btnBackSubscriptions).setOnClickListener { onBackPressedDispatcher.onBackPressed() }
+        findViewById<MaterialButton>(R.id.btnBrowseForSubscription).setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         reminderOpened = savedInstanceState?.getBoolean("reminderOpened") ?: false
         FirebaseHelper.processDueSubscriptions(customerUsername = username).addOnCompleteListener { loadSubscriptions() }
     }

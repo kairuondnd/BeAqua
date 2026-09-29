@@ -134,6 +134,7 @@ class PickLocationActivity : AppCompatActivity() {
         delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_NO
         com.mapbox.common.MapboxOptions.accessToken = getString(R.string.mapbox_access_token)
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_pick_location)
 
         username = intent.getStringExtra("USERNAME")
@@ -164,7 +165,7 @@ class PickLocationActivity : AppCompatActivity() {
 
         configureSearchView()
 
-        findViewById<MaterialButton>(R.id.btnBackFromPick).setOnClickListener { finish() }
+        findViewById<MaterialButton>(R.id.btnBackFromPick).setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         confirmButton.setOnClickListener {
             val center = mapView.mapboxMap.cameraState.center
             reverseGeocode(center.latitude(), center.longitude())

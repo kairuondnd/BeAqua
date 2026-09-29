@@ -63,6 +63,7 @@ class SignupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_signup)
 
         val tvTitle = findViewById<TextView>(R.id.tvTitle)
@@ -176,7 +177,7 @@ class SignupActivity : AppCompatActivity() {
             btnBack
         ).forEach { it.startAnimation(slideUp) }
 
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         btnSignup.setOnClickListener {
             if (!privacyAcknowledgment.isChecked) {

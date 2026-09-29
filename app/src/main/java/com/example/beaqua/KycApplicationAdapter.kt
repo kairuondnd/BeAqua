@@ -11,7 +11,8 @@ class KycApplicationAdapter(
     private val applications: List<User>,
     private val onViewDocument: (User, String) -> Unit,
     private val onApprove: (User) -> Unit,
-    private val onReject: (User) -> Unit
+    private val onReject: (User) -> Unit,
+    private val onChat: (User) -> Unit
 ) : RecyclerView.Adapter<KycApplicationAdapter.ViewHolder>() {
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -23,6 +24,7 @@ class KycApplicationAdapter(
         val mayorsButton: MaterialButton = view.findViewById(R.id.btnViewMayorsPermit)
         val approveButton: MaterialButton = view.findViewById(R.id.btnApproveKyc)
         val rejectButton: MaterialButton = view.findViewById(R.id.btnRejectKyc)
+        val chatButton: MaterialButton = view.findViewById(R.id.btnChatApplicant)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -65,6 +67,7 @@ class KycApplicationAdapter(
         }
         holder.approveButton.setOnClickListener { onApprove(application) }
         holder.rejectButton.setOnClickListener { onReject(application) }
+        holder.chatButton.setOnClickListener { onChat(application) }
     }
 
     private fun bindDocumentButton(button: MaterialButton, application: User, url: String) {

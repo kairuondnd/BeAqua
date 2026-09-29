@@ -59,6 +59,7 @@ class StationLocatorActivity : AppCompatActivity() {
         delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_NO
         com.mapbox.common.MapboxOptions.accessToken = getString(R.string.mapbox_access_token)
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_station_locator)
 
         mapView = findViewById(R.id.mapView)
@@ -72,7 +73,7 @@ class StationLocatorActivity : AppCompatActivity() {
         selectedDeliveryFee = findViewById(R.id.tvSelectedStationDeliveryFee)
         viewProductsButton = findViewById(R.id.btnMapViewProducts)
 
-        findViewById<MaterialButton>(R.id.btnBackLocator).setOnClickListener { finish() }
+        findViewById<MaterialButton>(R.id.btnBackLocator).setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         findViewById<MaterialButton>(R.id.btnRecenterStations).setOnClickListener {
             frameVisibleLocations()
         }

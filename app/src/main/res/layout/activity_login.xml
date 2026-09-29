@@ -193,6 +193,15 @@
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
+                <com.google.android.material.checkbox.MaterialCheckBox
+                    android:id="@+id/cbKeepSignedIn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:checked="false"
+                    android:text="Keep me signed in"
+                    android:textColor="@color/text_primary" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnLoginLoginPage"
                     android:layout_width="match_parent"

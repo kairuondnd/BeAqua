@@ -20,6 +20,22 @@ data class OrderGroup(val items: List<Order>) {
     }
 }
 
+/** History shows a checkout together even when older item records have different statuses. */
+fun groupOrderHistory(orders: List<Order>): List<OrderGroup> = orders.withIndex()
+    .groupBy { (index, order) ->
+        listOf(
+            when {
+                order.checkoutId.isNotBlank() -> "checkout:${order.checkoutId}"
+                order.timestamp > 0 -> "legacy:${order.timestamp}"
+                else -> "ungrouped:$index"
+            },
+            order.customerName, order.stationOwnerUsername,
+            order.isSubscriptionOrder.toString(), order.subscriptionId,
+            order.scheduledDeliveryDate.toString()
+        )
+    }.values.map { entries -> OrderGroup(entries.map { it.value }) }
+    .sortedByDescending { group -> group.items.maxOf { it.timestamp } }
+
 /** Exact timestamps support old checkouts; never merge merely nearby orders. */
 fun groupCheckoutOrders(orders: List<Order>): List<OrderGroup> = orders.withIndex()
     .groupBy { (index, order) ->

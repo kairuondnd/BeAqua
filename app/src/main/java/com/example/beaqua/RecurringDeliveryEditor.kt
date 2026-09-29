@@ -159,12 +159,45 @@ object RecurringDeliveryEditor {
                 ItemControl(product, itemCheck, itemQuantity)
             }
 
-            label("Repeat every (days)")
+            label("Delivery schedule")
+            val scheduleMode = android.widget.RadioGroup(context)
+            val intervalMode = android.widget.RadioButton(context).apply {
+                id = View.generateViewId()
+                text = "Repeat every number of days"
+            }
+            val weekdayMode = android.widget.RadioButton(context).apply {
+                id = View.generateViewId()
+                text = "Select day(s) of the week"
+            }
+            scheduleMode.addView(intervalMode)
+            scheduleMode.addView(weekdayMode)
+            scheduleMode.check(if (existing?.deliveryWeekdays?.isNotEmpty() == true) weekdayMode.id else intervalMode.id)
+            layout.addView(scheduleMode)
             val interval = EditText(context).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER
+                hint = "Repeat every (days)"
                 setText((existing?.repeatEveryDays ?: 7).toString())
             }
             layout.addView(interval)
+            val weekdayChoices = com.google.android.material.chip.ChipGroup(context).apply {
+                isSingleSelection = false
+            }
+            val dayChips = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").mapIndexed { index, name ->
+                com.google.android.material.chip.Chip(context).apply {
+                    id = View.generateViewId()
+                    text = name
+                    isCheckable = true
+                    isChecked = index + 1 in existing?.deliveryWeekdays.orEmpty()
+                    weekdayChoices.addView(this)
+                }
+            }
+            layout.addView(weekdayChoices)
+            fun selectedWeekdays() = if (scheduleMode.checkedRadioButtonId == weekdayMode.id)
+                dayChips.mapIndexedNotNull { index, chip -> if (chip.isChecked) index + 1 else null }
+            else emptyList()
+            fun unchangedSchedule(days: Int, weekdays: List<Int>) = existing != null &&
+                existing.deliveryWeekdays.toSet() == weekdays.toSet() &&
+                (weekdays.isNotEmpty() || days == existing.repeatEveryDays)
 
             val formOpenedAt = System.currentTimeMillis()
             val nextDelivery = Calendar.getInstance(stationTimeZone).apply {
@@ -174,26 +207,30 @@ object RecurringDeliveryEditor {
             val nextDate = Button(context).apply { isEnabled = false }
             val cutoffText = TextView(context)
             fun renderDate() {
+                val weekly = scheduleMode.checkedRadioButtonId == weekdayMode.id
+                interval.visibility = if (weekly) View.GONE else View.VISIBLE
+                weekdayChoices.visibility = if (weekly) View.VISIBLE else View.GONE
+                val weekdays = selectedWeekdays()
+                val days = if (weekly) 7 else interval.text.toString().toIntOrNull() ?: 0
+                if ((weekly && weekdays.isEmpty()) || days !in 1..3650) {
+                    nextDate.text = "Next delivery: choose a schedule"
+                    cutoffText.text = if (weekly) "Select one or more days. Deliveries repeat on those days each week."
+                        else "Enter a repeat interval from 1 to 3650 days."
+                    return
+                }
+                nextDelivery.timeInMillis = if (unchangedSchedule(days, weekdays)) existing!!.nextDeliveryAt
+                    else DeliveryFinalization.firstDeliveryAfter(formOpenedAt, days, hours, weekdays)
                 nextDate.text = "Next delivery: ${dateFormat.format(nextDelivery.time)}"
                 cutoffText.text =
-                    "The next delivery is calculated automatically from the repeat interval. " +
+                    "The next delivery follows your selected schedule, starting after today. " +
                     "Finalize changes by ${cutoffLabel(nextDelivery.timeInMillis)}, when the station opens. " +
-                    "We will remind you the day before."
+                    "The order appears in the station's queue the day before delivery. " +
+                    "Changes to queued items send the order back for station confirmation."
             }
             renderDate()
-            interval.doAfterTextChanged { editable ->
-                val days = editable.toString().toIntOrNull()
-                if (days != null && days in 1..3650) {
-                    nextDelivery.timeInMillis = if (
-                        existing != null && days == existing.repeatEveryDays
-                    ) {
-                        existing.nextDeliveryAt
-                    } else {
-                        DeliveryFinalization.firstDeliveryAfter(formOpenedAt, days, hours)
-                    }
-                    renderDate()
-                }
-            }
+            interval.doAfterTextChanged { renderDate() }
+            scheduleMode.setOnCheckedChangeListener { _, _ -> renderDate() }
+            dayChips.forEach { chip -> chip.setOnCheckedChangeListener { _, _ -> renderDate() } }
             layout.addView(nextDate)
             layout.addView(cutoffText)
 
@@ -259,7 +296,13 @@ object RecurringDeliveryEditor {
             }
 
             saveButton.setOnClickListener {
-                val days = interval.text.toString().toIntOrNull() ?: 0
+                val weekly = scheduleMode.checkedRadioButtonId == weekdayMode.id
+                val weekdays = selectedWeekdays()
+                if (weekly && weekdays.isEmpty()) {
+                    Toast.makeText(context, "Select at least one delivery day", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val days = if (weekly) 7 else interval.text.toString().toIntOrNull() ?: 0
                 if (days !in 1..3650) {
                     interval.error = "Enter 1 to 3650 days"
                     return@setOnClickListener
@@ -287,10 +330,10 @@ object RecurringDeliveryEditor {
                 }
                 if (invalidQuantity) return@setOnClickListener
 
-                val deliveryAt = if (existing != null && days == existing.repeatEveryDays) {
-                    existing.nextDeliveryAt
+                val deliveryAt = if (unchangedSchedule(days, weekdays)) {
+                    existing!!.nextDeliveryAt
                 } else {
-                    DeliveryFinalization.firstDeliveryAfter(System.currentTimeMillis(), days, hours)
+                    DeliveryFinalization.firstDeliveryAfter(System.currentTimeMillis(), days, hours, weekdays)
                 }
                 if (!DeliveryFinalization.canEdit(deliveryAt, hours, System.currentTimeMillis())) {
                     Toast.makeText(
@@ -312,6 +355,7 @@ object RecurringDeliveryEditor {
                     quantity = firstItem.quantity,
                     items = selectedItems,
                     repeatEveryDays = days,
+                    deliveryWeekdays = weekdays,
                     nextDeliveryAt = deliveryAt,
                     deliveryDay = "",
                     deliveryTimeSlot = "",
@@ -333,8 +377,8 @@ object RecurringDeliveryEditor {
                     .setTitle("Place these items today?")
                     .setMessage(
                         "$orderSummary\n\nWould you like to order the selected items today? " +
-                            "Today's orders will use Cash on Delivery. Your recurring delivery will then continue every " +
-                            "$days day(s), with the next one on ${dateFormat.format(Date(deliveryAt))}."
+                            "Today's orders will use Cash on Delivery. Your recurring schedule is: ${delivery.scheduleLabel()}. " +
+                            "The next delivery is on ${dateFormat.format(Date(deliveryAt))}."
                     )
                     .setPositiveButton("Order today") { _, _ -> persist(delivery, orderToday = true) }
                     .setNegativeButton("Start on ${dateFormat.format(Date(deliveryAt))}") { _, _ ->

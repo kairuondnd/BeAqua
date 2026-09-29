@@ -29,6 +29,7 @@ class UserProfileActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_user_profile)
 
         // Bind views safely
@@ -44,7 +45,7 @@ class UserProfileActivity : AppCompatActivity() {
         btnLogout = findViewById(R.id.btnLogout)
         btnBack = findViewById(R.id.btnBackProfile)
 
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
         // Get username passed from intent
         currentUsername = intent.getStringExtra("USERNAME") ?: ""
@@ -125,6 +126,7 @@ class UserProfileActivity : AppCompatActivity() {
         }
 
         btnLogout.setOnClickListener {
+            RememberedSession.clear(this)
             DeliveryReminderWorker.clear(this)
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

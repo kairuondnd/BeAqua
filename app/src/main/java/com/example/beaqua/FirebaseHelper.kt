@@ -631,9 +631,15 @@ object FirebaseHelper {
         delivery: WeeklySubscription
     ): DeliveryResources {
         require(delivery.repeatEveryDays in 1..3650) { "Choose 1 to 3650 days" }
+        require(delivery.deliveryWeekdays.all { it in 1..7 }) { "Choose valid delivery days" }
         val station = transaction.get(usersCollection.document(delivery.stationOwnerUsername)).toObject(User::class.java)
             ?: throw IllegalStateException("Station unavailable")
         check(station.isApprovedStationOwner()) { "Station is not approved" }
+        if (delivery.deliveryWeekdays.isNotEmpty()) {
+            val weekday = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone(station.operatingHours.timeZoneId))
+                .apply { timeInMillis = delivery.nextDeliveryAt }.get(java.util.Calendar.DAY_OF_WEEK)
+            require(weekday in delivery.deliveryWeekdays) { "Next delivery must fall on a selected weekday" }
+        }
         require(DeliveryFinalization.canEdit(delivery.nextDeliveryAt, station.operatingHours, System.currentTimeMillis())) {
             "Editing closes when the station opens on delivery day. Choose a later delivery date."
         }
@@ -810,7 +816,7 @@ object FirebaseHelper {
                     .toObject(User::class.java) ?: error("Station unavailable")
                 if (!DeliveryFinalization.canEdit(delivery.nextDeliveryAt, station.operatingHours, System.currentTimeMillis())) {
                     delivery.nextDeliveryAt = DeliveryFinalization.nextDelivery(
-                        delivery.nextDeliveryAt, delivery.repeatEveryDays, station.operatingHours, System.currentTimeMillis())
+                        delivery.nextDeliveryAt, delivery.repeatEveryDays, station.operatingHours, System.currentTimeMillis(), delivery.deliveryWeekdays)
                 }
                 validateDelivery(transaction, delivery)
             }
@@ -928,7 +934,7 @@ object FirebaseHelper {
             if (queueAction == DeliveryFinalization.QueueAction.ADVANCE) {
                     transaction.update(subscriptionRef, mapOf(
                         "nextDeliveryAt" to DeliveryFinalization.nextDelivery(subscription.nextDeliveryAt,
-                            subscription.repeatEveryDays, hours, now),
+                            subscription.repeatEveryDays, hours, now, subscription.deliveryWeekdays),
                         "queuedDeliveryAt" to 0L, "queuedOrderIds" to emptyList<String>(),
                         "lastStatus" to "Scheduled"
                     ))
@@ -940,7 +946,7 @@ object FirebaseHelper {
                     .toObject(Product::class.java)
             }
 
-            val nextDelivery = DeliveryFinalization.nextDelivery(subscription.nextDeliveryAt, subscription.repeatEveryDays, hours, now)
+            val nextDelivery = DeliveryFinalization.nextDelivery(subscription.nextDeliveryAt, subscription.repeatEveryDays, hours, now, subscription.deliveryWeekdays)
             val customer = customerSnapshot.toObject(User::class.java)
             val offeringUnavailable = productsById.values.any { it == null } ||
                 (station != null && productsById.values.filterNotNull().any { it.ownerUsername != station.username })
@@ -1090,11 +1096,33 @@ object FirebaseHelper {
     }
 
     // --- Feedback Methods ---
-    fun addFeedback(feedback: Feedback): Task<Void> {
-        val docRef = feedbacksCollection.document()
+    fun addFeedback(feedback: Feedback, orderIds: List<String> = listOf(feedback.orderId)): Task<Void> {
+        require(feedback.productQualityRating in 1f..5f && feedback.serviceQualityRating in 1f..5f) {
+            "Rate both product quality and service quality from 1 to 5 stars"
+        }
+        require(feedback.orderId.isNotBlank()) { "An order is required" }
+        require(orderIds.isNotEmpty() && orderIds.all { it.isNotBlank() }) { "Order items are required" }
+        val references = orderIds.distinct().sorted().map { ordersCollection.document(it) }
+        val docRef = feedbacksCollection.document("order_feedback_${references.first().id}")
         feedback.id = docRef.id
         feedback.timestamp = System.currentTimeMillis()
-        return docRef.set(feedback)
+        return db.runTransaction<Void> { transaction ->
+            val orders = references.map { ref ->
+                val order = transaction.get(ref).toObject(Order::class.java) ?: error("Order no longer exists")
+                check(order.customerName == feedback.customerUsername && order.stationOwnerUsername == feedback.stationOwnerUsername) {
+                    "Feedback must belong to this order"
+                }
+                check(order.status == "Delivered") { "You can rate an order after delivery" }
+                order.apply { id = ref.id }
+            }
+            check(groupOrderHistory(orders).size == 1) { "Rate one checkout at a time" }
+            check(orders.any { !it.isRated }) { "This order has already been rated" }
+            transaction.set(docRef, feedback.copy(orderIds = references.map { it.id },
+                productName = orders.joinToString(", ") { it.productName },
+                stationRating = (feedback.productQualityRating + feedback.serviceQualityRating) / 2f))
+            references.forEach { transaction.update(it, "isRated", true) }
+            null
+        }
     }
 
     fun getFeedbacksForStation(ownerUsername: String, isAdmin: Boolean = false): Task<QuerySnapshot> {

@@ -20,6 +20,7 @@ class StationOwnerHistoryActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_station_owner_history)
 
         drawerLayout = findViewById(R.id.drawerLayoutStationHistory)
@@ -29,7 +30,7 @@ class StationOwnerHistoryActivity : AppCompatActivity() {
         val btnBack = findViewById<ImageButton>(R.id.btnBackStationHistory)
         val btnMenu = findViewById<ImageButton>(R.id.btnMenuStationHistory)
 
-        btnBack.setOnClickListener { finish() }
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         btnMenu.setOnClickListener {
             drawerLayout.openDrawer(GravityCompat.END)
         }
@@ -81,6 +82,7 @@ class StationOwnerHistoryActivity : AppCompatActivity() {
         }
 
         findViewById<LinearLayout>(R.id.navStationHistoryLogout).setOnClickListener {
+            RememberedSession.clear(this)
             drawerLayout.closeDrawer(GravityCompat.END)
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -92,13 +94,15 @@ class StationOwnerHistoryActivity : AppCompatActivity() {
     private fun loadHistory() {
         FirebaseHelper.getOrdersForStation(currentStation.username).addOnSuccessListener { result ->
             val allOrders = result.toObjects(Order::class.java)
-            val acceptedOrders = allOrders.filter { it.status != "Pending" }
+            val acceptedOrders = groupOrderHistory(allOrders)
+                .filter { group -> group.items.any { it.status != "Pending" } }
+                .flatMap { it.items }
 
             if (acceptedOrders.isEmpty()) {
                 Toast.makeText(this, "No accepted orders found", Toast.LENGTH_SHORT).show()
             }
 
-            rvHistory.adapter = StationOwnerHistoryAdapter(acceptedOrders)
+            rvHistory.adapter = UserHistoryAdapter(acceptedOrders, "Station Owner") { }
         }
     }
 }

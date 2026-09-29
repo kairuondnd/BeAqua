@@ -24,6 +24,7 @@ class AdminActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this)
         setContentView(R.layout.activity_admin)
 
         progress = findViewById(R.id.adminKycProgress)
@@ -34,7 +35,8 @@ class AdminActivity : AppCompatActivity() {
             applications = applications,
             onViewDocument = ::openDocument,
             onApprove = { application -> confirmDecision(application, User.KYC_APPROVED) },
-            onReject = { application -> confirmDecision(application, User.KYC_REJECTED) }
+            onReject = { application -> confirmDecision(application, User.KYC_REJECTED) },
+            onChat = { application -> AdminChat.open(this, AdminChat.USERNAME, application.username) }
         )
 
         findViewById<RecyclerView>(R.id.rvKycApplications).apply {
@@ -45,7 +47,11 @@ class AdminActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btnRefreshKyc).setOnClickListener {
             loadApplications()
         }
+        findViewById<MaterialButton>(R.id.btnAdminMessages).setOnClickListener {
+            startActivity(Intent(this, MessagesActivity::class.java).putExtra("USERNAME", AdminChat.USERNAME))
+        }
         findViewById<MaterialButton>(R.id.btnLogoutAdmin).setOnClickListener {
+            RememberedSession.clear(this)
             startActivity(
                 Intent(this, LoginActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

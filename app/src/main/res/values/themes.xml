@@ -1,6 +1,8 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.BeAqua" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Base.Theme.BeAqua" parent="Theme.Material3.Light.NoActionBar">
+        <!-- Screens use light backgrounds even when the device is in dark mode. -->
+        <item name="android:forceDarkAllowed">false</item>
         <!-- Primary brand color. -->
         <item name="colorPrimary">@color/primary</item>
         <item name="colorOnPrimary">@color/white</item>
@@ -35,6 +37,8 @@
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textColorHint">@color/text_hint</item>
         <item name="android:editTextColor">@color/text_primary</item>
+        <item name="android:editTextStyle">@style/AppEditText</item>
+        <item name="editTextStyle">@style/AppEditText</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
 
         <!-- Customize your theme here. -->
@@ -43,6 +47,11 @@
     </style>
 
     <style name="Theme.BeAqua" parent="Base.Theme.BeAqua" />
+
+    <style name="AppEditText" parent="Widget.AppCompat.EditText">
+        <item name="android:textColor">@color/black</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+    </style>
 
     <!-- Aesthetic Button Style -->
     <style name="AppButton" parent="Widget.Material3.Button">

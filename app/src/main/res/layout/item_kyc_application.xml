@@ -76,6 +76,15 @@
             android:text="View Mayor's Business Permit"
             android:textColor="@color/primary" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnChatApplicant"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:text="Chat with station"
+            android:textColor="@color/primary" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

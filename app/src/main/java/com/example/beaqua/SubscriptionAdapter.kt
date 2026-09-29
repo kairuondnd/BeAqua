@@ -49,7 +49,7 @@ class SubscriptionAdapter(
         }
         holder.station.text = subscription.stationName
         holder.schedule.text =
-            "Every ${subscription.repeatEveryDays} day(s)"
+            subscription.scheduleLabel()
         holder.details.text = items.joinToString("\n") {
             "${it.quantity} × ${it.productName}"
         } + "\nNext: $nextDate"

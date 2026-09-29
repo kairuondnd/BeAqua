@@ -36,6 +36,7 @@ import java.util.Date
 import java.util.Locale
 
 class UserHomeActivity : AppCompatActivity() {
+    private var showingHomeContent = true
 
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var contentFrame: FrameLayout
@@ -81,6 +82,9 @@ class UserHomeActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackNavigation.install(this) {
+            if (!showingHomeContent) { showStations(); true } else false
+        }
         setContentView(R.layout.activity_user_home)
 
         drawerLayout = findViewById(R.id.drawerLayout)
@@ -310,6 +314,7 @@ class UserHomeActivity : AppCompatActivity() {
         }
 
         btnLogout.setOnClickListener {
+            RememberedSession.clear(this)
             DeliveryReminderWorker.clear(this)
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -319,6 +324,7 @@ class UserHomeActivity : AppCompatActivity() {
     }
 
     private fun showStations() {
+        showingHomeContent = true
         contentFrame.removeAllViews()
         val homeView = LayoutInflater.from(this).inflate(R.layout.user_home_content, contentFrame, false)
         contentFrame.addView(homeView)
@@ -378,6 +384,7 @@ class UserHomeActivity : AppCompatActivity() {
     }
 
     private fun showStationInventory(station: User) {
+        showingHomeContent = false
         contentFrame.removeAllViews()
         val inventoryView = LayoutInflater.from(this).inflate(R.layout.station_inventory_content, contentFrame, false)
         contentFrame.addView(inventoryView)
