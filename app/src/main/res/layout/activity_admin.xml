@@ -91,6 +91,26 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnAdminAccounts"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_marginHorizontal="20dp"
+        android:text="User accounts"
+        app:layout_constraintTop_toBottomOf="@id/btnAdminMessages"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnPasswordRequests"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_marginHorizontal="20dp"
+        android:text="Password recovery requests"
+        app:layout_constraintTop_toBottomOf="@id/btnAdminAccounts"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <ProgressBar
         android:id="@+id/adminKycProgress"
         android:layout_width="48dp"
@@ -124,6 +144,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnAdminMessages" />
+        app:layout_constraintTop_toBottomOf="@id/btnPasswordRequests" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

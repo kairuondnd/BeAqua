@@ -83,6 +83,98 @@ class PickLocationActivity : AppCompatActivity() {
     private var latestSearchQuery = ""
     private var suppressQueryCallback = false
     private var username: String? = null
+    private var deviceLocationListener: android.location.LocationListener? = null
+    private val deviceLocationTimeout = Runnable {
+        stopDeviceLocation()
+        selectedAddress.text = "Device location unavailable. Search for your address or move the map to place the pin."
+        Toast.makeText(this, "Could not get a precise location. Try outdoors, or move the map to place your pin.", Toast.LENGTH_LONG).show()
+    }
+    private val locationPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true) locateDevice()
+        else Toast.makeText(this, "Location permission was denied. You can search for your address or place the pin manually.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun locateDevice() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            locationPermission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+            return
+        }
+        stopDeviceLocation()
+        val manager = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val providers = listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
+            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        if (providers.isEmpty()) {
+            androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Turn on device location")
+                .setMessage("Enable Location on your phone, then tap Use my current location again.")
+                .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
+                .setNegativeButton("Cancel", null).show()
+            return
+        }
+        // A recent cached fix avoids waiting for GPS to warm up indoors.
+        val recent = providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+            .filter { usableDeviceLocation(it, 120_000_000_000L) }
+            .minByOrNull { if (it.hasAccuracy()) it.accuracy else Float.MAX_VALUE }
+        if (recent != null) {
+            showDeviceLocation(recent, cached = true)
+            return
+        }
+        findViewById<Button>(R.id.btnUseDeviceLocation).text = "Cancel location search"
+        selectedAddress.text = "Finding your location. You can cancel and place the pin manually."
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
+                if (deviceLocationListener !== this) return
+                if (!usableDeviceLocation(location, 120_000_000_000L)) return
+                stopDeviceLocation()
+                showDeviceLocation(location)
+            }
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+            @Deprecated("Deprecated in Android")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        }
+        deviceLocationListener = listener
+        var started = false
+        providers.forEach { provider ->
+            try { manager.requestLocationUpdates(provider, 1000L, 0f, listener, Looper.getMainLooper()); started = true }
+            catch (_: SecurityException) { }
+            catch (_: IllegalArgumentException) { }
+        }
+        if (started) searchHandler.postDelayed(deviceLocationTimeout, 15_000L)
+        else deviceLocationTimeout.run()
+    }
+
+    private fun usableDeviceLocation(location: android.location.Location, maxAgeNanos: Long): Boolean {
+        val age = android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
+        return age in 0..maxAgeNanos && location.latitude.isFinite() && location.longitude.isFinite() &&
+            location.latitude in -90.0..90.0 && location.longitude in -180.0..180.0
+    }
+
+    private fun showDeviceLocation(location: android.location.Location, cached: Boolean = false) {
+        cancelPendingSearch()
+        activeRetrieveCall?.cancel()
+        searchResultsScroll.visibility = View.GONE
+        val precise = location.hasAccuracy() && location.accuracy <= 50f
+        mapView.mapboxMap.setCamera(CameraOptions.Builder()
+            .center(Point.fromLngLat(location.longitude, location.latitude))
+            .zoom(if (precise) 18.0 else 14.0).build())
+        val accuracy = if (location.hasAccuracy()) "Accuracy about ${location.accuracy.toInt()} m." else "Accuracy unavailable."
+        selectedAddress.text = "${if (cached) "Recent device location" else "Device location"}. $accuracy " +
+            if (precise) "Check the pin and confirm." else "This is approximate. Move the map to your exact delivery address before confirming."
+    }
+
+    private fun stopDeviceLocation() {
+        searchHandler.removeCallbacks(deviceLocationTimeout)
+        deviceLocationListener?.let { listener ->
+            (getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager).removeUpdates(listener)
+        }
+        deviceLocationListener = null
+        findViewById<Button>(R.id.btnUseDeviceLocation)?.apply { isEnabled = true; text = "Use my current location" }
+        if (::confirmButton.isInitialized) confirmButton.isEnabled = true
+    }
 
     private enum class SuggestionSource { SEARCH_BOX, LEGACY_GEOCODER }
 
@@ -146,6 +238,12 @@ class PickLocationActivity : AppCompatActivity() {
         searchResultsScroll = findViewById(R.id.locationSearchResultsScroll)
         searchResultsContainer = findViewById(R.id.locationSearchResults)
         selectedAddress = findViewById(R.id.tvSelectedMapAddress)
+        findViewById<Button>(R.id.btnUseDeviceLocation).setOnClickListener {
+            if (deviceLocationListener != null) {
+                stopDeviceLocation()
+                selectedAddress.text = "Search cancelled. Search for your address or move the map to place the pin."
+            } else locateDevice()
+        }
 
         MapStyleHelper.loadReadableStyle(mapView)
 
@@ -167,6 +265,7 @@ class PickLocationActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.btnBackFromPick).setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         confirmButton.setOnClickListener {
+            stopDeviceLocation()
             val center = mapView.mapboxMap.cameraState.center
             reverseGeocode(center.latitude(), center.longitude())
         }
@@ -725,7 +824,16 @@ class PickLocationActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    override fun onStop() {
+        if (deviceLocationListener != null) {
+            stopDeviceLocation()
+            selectedAddress.text = "Location search stopped. Tap Use my current location to retry, or place the pin manually."
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        stopDeviceLocation()
         cancelPendingSearch()
         activeReverseCall?.cancelCall()
         activeRetrieveCall?.cancel()

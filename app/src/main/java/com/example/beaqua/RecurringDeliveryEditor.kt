@@ -380,7 +380,9 @@ object RecurringDeliveryEditor {
                             "Today's orders will use Cash on Delivery. Your recurring schedule is: ${delivery.scheduleLabel()}. " +
                             "The next delivery is on ${dateFormat.format(Date(deliveryAt))}."
                     )
-                    .setPositiveButton("Order today") { _, _ -> persist(delivery, orderToday = true) }
+                    .setPositiveButton("Order today") { _, _ ->
+                        ClosedStationOrderDialog.confirm(context, station) { persist(delivery, orderToday = true) }
+                    }
                     .setNegativeButton("Start on ${dateFormat.format(Date(deliveryAt))}") { _, _ ->
                         persist(delivery, orderToday = false)
                     }

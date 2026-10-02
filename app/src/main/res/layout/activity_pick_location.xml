@@ -125,6 +125,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/ivCenterPin" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnUseDeviceLocation"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Use my current location"
+        android:textAllCaps="false"
+        app:layout_constraintBottom_toTopOf="@id/cardSelectedMapAddress"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/cardSelectedMapAddress"
         android:layout_width="0dp"

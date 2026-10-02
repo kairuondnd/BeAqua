@@ -60,6 +60,8 @@ data class Order(
     var refillInstructions: String = "",
     var emptyContainerCount: Int = 0,
     var checkoutId: String = "",
+    var gcashReceiptUrl: String = "",
+    var rejectionReason: String = "",
     var deliveryReceipt: DeliveryReceipt? = null
 )
 

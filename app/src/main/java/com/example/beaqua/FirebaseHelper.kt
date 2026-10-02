@@ -243,10 +243,11 @@ object FirebaseHelper {
     }
 
     /** Atomically verifies that listed containers still exist and creates orders. */
-    fun placeOrders(user: User, cartItems: List<CartItem>, selectedPayment: String, isPaid: Boolean, isRush: Boolean, rushOrderFee: Double, deliveryFee: Double): Task<String?> {
+    fun placeOrders(user: User, cartItems: List<CartItem>, selectedPayment: String, isPaid: Boolean, isRush: Boolean, rushOrderFee: Double, deliveryFee: Double, gcashReceiptUrl: String = ""): Task<String?> {
         val checkoutId = java.util.UUID.randomUUID().toString()
         return db.runTransaction { transaction ->
             if (cartItems.isEmpty()) throw IllegalStateException("The cart is empty")
+            require(selectedPayment != "GCash" || gcashReceiptUrl.startsWith("https://")) { "Attach your GCash receipt screenshot before submitting." }
             require(cartItems.map { it.id }.distinct().size == cartItems.size) { "Duplicate cart items. Refresh your cart." }
             // Reading cart entries makes concurrent checkouts conflict and retry before creating orders.
             for (item in cartItems) {
@@ -293,11 +294,6 @@ object FirebaseHelper {
                     ?: throw Exception("The selected water station is unavailable")
                 if (!station.isApprovedStationOwner()) {
                     throw Exception("The selected water station is not approved")
-                }
-                if (!station.isStationOpen()) {
-                    throw Exception(
-                        "${station.name.ifBlank { "The selected station" }} is currently closed"
-                    )
                 }
                 orderStations[ownerUsername] = station
             }
@@ -353,13 +349,14 @@ object FirebaseHelper {
                     productName = item.productName,
                     imageUri = item.imageUri,
                     customerName = user.username,
-                    customerAddress = user.address,
+                    customerAddress = user.deliveryAddress(),
                     stationOwnerUsername = item.stationOwnerUsername,
                     stationName = stationName,
                     quantity = item.quantity,
                     totalPrice = (currentUnitPrice * item.quantity) + rushFeePerItem + deliveryFeePerItem,
                     containerType = item.containerType,
                     paymentMethod = selectedPayment,
+                    gcashReceiptUrl = if (selectedPayment == "GCash") gcashReceiptUrl else "",
                     status = "Pending",
                     pendingExpiresAt = checkoutTimestamp + PENDING_ORDER_TIMEOUT_MILLIS,
                     customerLat = user.latitude,
@@ -369,7 +366,7 @@ object FirebaseHelper {
                     isRushOrder = isRush,
                     rushOrderFee = rushFeePerItem,
                     deliveryFee = deliveryFeePerItem,
-                    isPaid = isPaid,
+                    isPaid = if (selectedPayment == "GCash") false else isPaid,
                     offeringType = item.offeringType,
                     refillServiceId = item.refillServiceId,
                     refillInstructions = item.refillInstructions,
@@ -454,9 +451,14 @@ object FirebaseHelper {
         return updateCheckoutOrders(orderIds, if (status == "Rejected") "Pending" else "Accepted", updates)
     }
 
+    fun rejectCheckout(orderIds: List<String>, stationUsername: String, reason: String): Task<Void> {
+        require(reason.isNotBlank() && reason.length <= 500) { "Enter a reason (up to 500 characters)." }
+        return updateCheckoutOrders(orderIds, "Pending", mapOf("status" to "Rejected", "rejectionReason" to reason.trim()), stationUsername, reason.trim())
+    }
+
     private fun updateCheckoutOrders(
         orderIds: List<String>, expectedStatus: String, updates: Map<String, Any>,
-        stationUsername: String? = null
+        stationUsername: String? = null, rejectionReason: String? = null
     ): Task<Void> {
         require(orderIds.isNotEmpty() && orderIds.all { it.isNotBlank() }) { "Order IDs are required" }
         val references = orderIds.distinct().map { ordersCollection.document(it) }
@@ -478,6 +480,16 @@ object FirebaseHelper {
             check(groupCheckoutOrders(orders).size == 1) { "These items do not belong to the same checkout." }
             checkQueuedMembership(transaction, orders)
             references.forEach { transaction.update(it, updates) }
+            if (rejectionReason != null) {
+                val first = orders.first()
+                val notification = BeAquaNotification(
+                    id = "rejected_${first.checkoutId.ifBlank { first.id }}",
+                    recipientUsername = first.customerName, title = "Order rejected",
+                    message = "$rejectionReason\nFor any concerns about your order or payment, contact the water station owner through chat.",
+                    type = "ORDER_REJECTED", orderId = first.id, createdAt = System.currentTimeMillis()
+                )
+                transaction.set(notificationsCollection.document(notification.id), notification)
+            }
             null
         }
     }
@@ -681,11 +693,6 @@ object FirebaseHelper {
             }
 
             if (orderToday) {
-                check(resources.station.isStationOpen(
-                    java.util.Calendar.getInstance(
-                        java.util.TimeZone.getTimeZone(resources.station.operatingHours.timeZoneId)
-                    )
-                )) { "${resources.station.name.ifBlank { "This station" }} is currently closed" }
                 check(!customer?.address.isNullOrBlank()) { "Add your delivery address in Profile first" }
 
                 val deliveryFeePerItem = resources.station.deliveryFee / resources.items.size
@@ -699,7 +706,7 @@ object FirebaseHelper {
                         productName = product.name,
                         imageUri = product.imageUri,
                         customerName = customer!!.username,
-                        customerAddress = customer.address,
+                        customerAddress = customer.deliveryAddress(),
                         stationOwnerUsername = resources.station.username,
                         stationName = resources.station.name.ifBlank { resources.station.username },
                         quantity = item.quantity,
@@ -975,7 +982,7 @@ object FirebaseHelper {
                     productName = product.name,
                     imageUri = product.imageUri,
                     customerName = customer.username,
-                    customerAddress = customer.address,
+                    customerAddress = customer.deliveryAddress(),
                     stationOwnerUsername = station.username,
                     stationName = stationName,
                     quantity = item.quantity,

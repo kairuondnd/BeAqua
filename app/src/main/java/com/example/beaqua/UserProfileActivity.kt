@@ -69,6 +69,7 @@ class UserProfileActivity : AppCompatActivity() {
             etName.setText(currentUser.name)
             etContact.setText(currentUser.contactNumber)
             etAddress.setText(currentUser.address)
+            findViewById<EditText>(R.id.etAddressLine2).setText(currentUser.addressLine2)
             etUsername.setText(currentUser.username)
             etPassword.setText(currentUser.password)
             tvDisplayName.text = currentUser.name.ifEmpty { currentUser.username }
@@ -102,6 +103,7 @@ class UserProfileActivity : AppCompatActivity() {
             currentUser.name = newName
             currentUser.contactNumber = newContact
             currentUser.address = newAddress
+            currentUser.addressLine2 = findViewById<EditText>(R.id.etAddressLine2).text.toString().trim()
 
             FirebaseHelper.addUser(currentUser).addOnSuccessListener {
                 tvDisplayName.text = newName

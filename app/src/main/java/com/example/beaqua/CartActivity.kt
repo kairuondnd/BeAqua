@@ -33,7 +33,32 @@ class CartActivity : AppCompatActivity() {
     private var currentStationDeliveryFee: Double = 0.0
     private var isRushEnabledAtStation: Boolean = false
 
+    private val gcashPayment = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val proof = result.data?.getStringExtra("receiptUrl").orEmpty()
+            if (proof.isNotBlank()) {
+                pendingGcashResult = result.data
+                submitPendingGcash()
+            }
+        }
+    }
     private var isFinalizing = false
+    private var pendingGcashResult: Intent? = null
+    private var cartReady = false
+
+    private fun submitPendingGcash() {
+        if (!cartReady || currentUser == null) return
+        val result = pendingGcashResult ?: return
+        pendingGcashResult = null
+        if (cartItems.isEmpty() || cartItems.any { it.stationOwnerUsername != result.getStringExtra("stationUsername") } ||
+            kotlin.math.abs(calculateTotal() - result.getDoubleExtra("amount", -1.0)) > 0.01) {
+            AlertDialog.Builder(this).setTitle("Cart changed")
+                .setMessage("Your cart no longer matches the payment amount or station. Do not pay again. Contact the station through chat to resolve your payment before checking out.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        finalizeOrders("GCash", false, result.getStringExtra("receiptUrl").orEmpty())
+    }
     private var isCheckingItems = false
     private var completedCheckoutItems = emptyList<CartItem>()
 
@@ -205,10 +230,13 @@ class CartActivity : AppCompatActivity() {
                         ).show()
                     }
                     updateUI()
-                    
+                    cartReady = true
+                    submitPendingGcash()
                 }
             } else {
                 updateUI()
+                cartReady = true
+                submitPendingGcash()
             }
         }
     }
@@ -265,6 +293,31 @@ class CartActivity : AppCompatActivity() {
             btnCheckout.isEnabled = true
             if (!isAvailable) return@checkItemsStillOffered
 
+            confirmStationCheckout { showPaymentChoices() }
+        }
+    }
+
+    private fun confirmStationCheckout(onConfirmed: () -> Unit) {
+        val stationUsername = cartItems.firstOrNull()?.stationOwnerUsername ?: return
+        isCheckingItems = true
+        btnCheckout.isEnabled = false
+        FirebaseHelper.getUser(stationUsername).addOnSuccessListener { snapshot ->
+            isCheckingItems = false
+            btnCheckout.isEnabled = true
+            val station = snapshot.toObject(User::class.java)
+            if (station?.isApprovedStationOwner() != true) {
+                Toast.makeText(this, "This station is unavailable", Toast.LENGTH_LONG).show()
+                return@addOnSuccessListener
+            }
+            ClosedStationOrderDialog.confirm(this, station, onConfirmed)
+        }.addOnFailureListener {
+            isCheckingItems = false
+            btnCheckout.isEnabled = true
+            Toast.makeText(this, "Could not check the station. Please try again.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showPaymentChoices() {
             val paymentMethods = resources.getStringArray(R.array.payment_methods)
             AlertDialog.Builder(this)
                 .setTitle("Select Payment Method")
@@ -278,7 +331,6 @@ class CartActivity : AppCompatActivity() {
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
-        }
     }
 
     private fun checkItemsStillOffered(onResult: (Boolean) -> Unit) {
@@ -350,20 +402,26 @@ class CartActivity : AppCompatActivity() {
         FirebaseHelper.getUser(stationUsername).addOnSuccessListener { snapshot ->
                 btnCheckout.isEnabled = true
                 val station = snapshot.toObject(User::class.java)
-                if (station?.isApprovedStationOwner() != true || !station.isStationOpen()) {
+                if (station?.isApprovedStationOwner() != true) {
                     Toast.makeText(this, "This station is unavailable", Toast.LENGTH_LONG).show()
                     return@addOnSuccessListener
                 }
-                GcashQrDialog.show(this, station, calculateTotal()) {
-                    finalizeOrders("GCash", isPaid = false)
+                if (station.gcashQrUrl.isBlank()) {
+                    Toast.makeText(this, "This station has no GCash QR code. Choose another payment method.", Toast.LENGTH_LONG).show()
+                    return@addOnSuccessListener
                 }
+                gcashPayment.launch(Intent(this, GcashPaymentActivity::class.java)
+                    .putExtra("stationUsername", stationUsername)
+                    .putExtra("qr", station.gcashQrUrl)
+                    .putExtra("stationName", station.name)
+                    .putExtra("amount", calculateTotal()))
         }.addOnFailureListener {
                 btnCheckout.isEnabled = true
                 Toast.makeText(this, "Could not load GCash QR code", Toast.LENGTH_LONG).show()
             }
     }
 
-    private fun finalizeOrders(selectedPayment: String, isPaid: Boolean) {
+    private fun finalizeOrders(selectedPayment: String, isPaid: Boolean, receiptUrl: String = "") {
         if (isFinalizing) return
         val user = currentUser ?: return
         
@@ -386,7 +444,7 @@ class CartActivity : AppCompatActivity() {
             isPaid,
             isRush,
             currentStationRushFee,
-            currentStationDeliveryFee
+            currentStationDeliveryFee, receiptUrl
         ).addOnSuccessListener { error ->
             isFinalizing = false
             btnCheckout.isEnabled = true
@@ -399,7 +457,8 @@ class CartActivity : AppCompatActivity() {
                 
                 showRecurringRecommendation()
             } else {
-                AlertDialog.Builder(this)
+                if (selectedPayment == "GCash") showGcashSubmissionError(error, receiptUrl)
+                else AlertDialog.Builder(this)
                     .setTitle("Order Failed")
                     .setMessage(error)
                     .setPositiveButton("OK") { _, _ -> loadCartItems() }
@@ -408,7 +467,17 @@ class CartActivity : AppCompatActivity() {
         }.addOnFailureListener { e ->
             btnCheckout.isEnabled = true
             isFinalizing = false
-            Toast.makeText(this, "Checkout Error: ${e.message}", Toast.LENGTH_LONG).show()
+            if (selectedPayment == "GCash") {
+                showGcashSubmissionError(e.message.orEmpty(), receiptUrl)
+            } else Toast.makeText(this, "Checkout Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun showGcashSubmissionError(error: String, receiptUrl: String) {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this).setTitle("Order could not be submitted")
+            .setMessage("$error\n\nDo not pay again. Retry using your attached receipt, or contact the station through chat. Check order history first if your connection was interrupted.")
+            .setPositiveButton("Retry submission") { _, _ -> finalizeOrders("GCash", false, receiptUrl) }
+            .setNegativeButton("Close", null).show()
     }
 }

@@ -754,9 +754,7 @@ class StationOwnerActivity : AppCompatActivity() {
         if (container == null || emptyView == null) return
 
         container.removeAllViews()
-        val previewOrders = groupCheckoutOrders(orders)
-            .sortedWith(compareBy<OrderGroup> { if (it.first.status == "Pending") 0 else 1 }
-                .thenByDescending { it.first.timestamp }).take(3)
+        val previewOrders = groupCheckoutOrders(orders).take(3)
         emptyView.visibility = if (previewOrders.isEmpty()) View.VISIBLE else View.GONE
         container.visibility = if (previewOrders.isEmpty()) View.GONE else View.VISIBLE
         fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
@@ -811,6 +809,18 @@ class StationOwnerActivity : AppCompatActivity() {
             }
             labels.addView(title)
             labels.addView(details)
+            labels.addView(TextView(this).apply {
+                text = OrderLocation.label(order)
+                textSize = 12f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            labels.addView(android.widget.Button(this).apply {
+                text = if (OrderLocation.hasPin(order)) "View map" else "No delivery pin saved"
+                isAllCaps = false
+                isEnabled = OrderLocation.hasPin(order)
+                setOnClickListener { OrderLocation.open(this@StationOwnerActivity, order) }
+            })
             if (order.isSubscriptionOrder && order.scheduledDeliveryDate > 0L) {
                 details.text = "${order.recurringDeliveryLabel()} · ${details.text}"
                 row.setOnClickListener {
@@ -1260,9 +1270,19 @@ class StationOwnerActivity : AppCompatActivity() {
         }
     }
 
+    private fun bindOrderLocation(view: View, order: Order) {
+        view.findViewById<TextView>(R.id.tvDeliveryLocation).text = OrderLocation.label(order)
+        view.findViewById<MaterialButton>(R.id.btnDeliveryMap).apply {
+            isEnabled = OrderLocation.hasPin(order)
+            text = if (isEnabled) "View customer pin on map" else "No delivery pin saved"
+            setOnClickListener { OrderLocation.open(this@StationOwnerActivity, order) }
+        }
+    }
+
     private fun addIncomingOrder(group: OrderGroup) {
         val order = group.first
         val orderView = LayoutInflater.from(this).inflate(R.layout.item_order, ordersContainer, false)
+        bindOrderLocation(orderView, order)
         val tvOrderInfo = orderView.findViewById<TextView>(R.id.tvOrderInfo)
         
         var infoText = "${order.customerName} ordered:\n${group.itemSummary()}"
@@ -1280,23 +1300,15 @@ class StationOwnerActivity : AppCompatActivity() {
 
         orderView.findViewById<Button>(R.id.btnAccept).setOnClickListener { 
             if (order.paymentMethod == "GCash" && !group.isPaid) {
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Verify GCash payment")
-                    .setMessage("Check your GCash account for this customer's payment of ₱${String.format(Locale.getDefault(), "%.2f", group.totalPrice)} before accepting all ${group.items.size} item(s).")
-                    .setPositiveButton("Payment received") { _, _ ->
-                        showDeliveryEtaPicker(group, markPaid = true)
-                    }
-                    .setNegativeButton("Not yet", null).show()
+                GcashVerificationDialog.show(this, group,
+                    onConfirmed = { showDeliveryEtaPicker(group, markPaid = true) },
+                    onRejected = { GcashVerificationDialog.reject(this, group, currentUsername) { refreshOrders() } })
                 return@setOnClickListener
             }
             showDeliveryEtaPicker(group, markPaid = false)
         }
         orderView.findViewById<Button>(R.id.btnReject).setOnClickListener {
-            FirebaseHelper.updateOrderGroupStatus(group.ids, "Rejected").addOnSuccessListener {
-                refreshOrders()
-            }.addOnFailureListener { error ->
-                Toast.makeText(this, "Could not reject order: ${error.message}", Toast.LENGTH_LONG).show()
-            }
+            GcashVerificationDialog.reject(this, group, currentUsername) { refreshOrders() }
         }
         
         orderView.findViewById<ImageButton>(R.id.btnChatWithCustomer).setOnClickListener {
@@ -1400,6 +1412,7 @@ class StationOwnerActivity : AppCompatActivity() {
     private fun addAcceptedOrder(group: OrderGroup) {
         val order = group.first
         val orderView = LayoutInflater.from(this).inflate(R.layout.item_accepted_order, acceptedOrdersContainer, false)
+        bindOrderLocation(orderView, order)
         val tvInfo = orderView.findViewById<TextView>(R.id.tvAcceptedOrderInfo)
         val tvPayment = orderView.findViewById<TextView>(R.id.tvAcceptedPaymentMethod)
 

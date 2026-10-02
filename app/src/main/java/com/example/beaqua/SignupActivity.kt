@@ -284,6 +284,7 @@ class SignupActivity : AppCompatActivity() {
                         emailAddress = if (isStationOwner) email else "",
                         contactNumber = contact,
                         address = address,
+                        addressLine2 = findViewById<EditText>(R.id.etAddressLine2).text.toString().trim(),
                         username = username,
                         password = password,
                         accountType = accountType,

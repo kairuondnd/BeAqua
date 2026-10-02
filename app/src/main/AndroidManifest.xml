@@ -19,6 +19,8 @@
         android:theme="@style/Theme.BeAqua"
         android:networkSecurityConfig="@xml/network_security_config">
 
+        <activity android:name=".GcashPaymentActivity" android:exported="false" />
+        <activity android:name=".OrderLocationActivity" android:exported="false" />
         <meta-data
             android:name="com.mapbox.token"
             android:value="@string/mapbox_access_token" />
@@ -58,6 +60,7 @@
         <activity
             android:name=".PendingOrdersActivity"
             android:exported="false" />
+        <activity android:name=".StationReviewsActivity" android:exported="false" />
         <activity
             android:name=".SingleChatActivity"
             android:exported="false" />

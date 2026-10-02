@@ -11,6 +11,7 @@ data class User(
     var emailAddress: String = "",
     var contactNumber: String = "",
     var address: String = "",
+    var addressLine2: String = "",
     var username: String = "",
     var password: String = "",
     var supabaseUserId: String = "",
@@ -152,3 +153,6 @@ data class EtaSettings(
             .ifEmpty { listOf("Delivery time to be confirmed") }
     }
 }
+
+/** Delivery snapshot includes optional details without changing the map address or pin. */
+fun User.deliveryAddress(): String = listOf(address.trim(), addressLine2.trim()).filter { it.isNotBlank() }.joinToString(", ")

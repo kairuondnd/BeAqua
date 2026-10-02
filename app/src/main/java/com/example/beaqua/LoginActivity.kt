@@ -39,6 +39,9 @@ class LoginActivity : AppCompatActivity() {
 
         val etUsername = findViewById<EditText>(R.id.etUsername)
         val etPassword = findViewById<EditText>(R.id.etPassword)
+        findViewById<TextView>(R.id.tvForgotPassword).setOnClickListener {
+            PasswordRecovery.request(this, etUsername.text.toString().trim())
+        }
         val keepSignedIn = findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.cbKeepSignedIn)
 
         val popAnimation = AnimationUtils.loadAnimation(this, R.anim.scale_up_pop)

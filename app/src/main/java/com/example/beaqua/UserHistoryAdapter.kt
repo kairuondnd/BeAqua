@@ -98,6 +98,33 @@ class UserHistoryAdapter(
             if (group.isPaid) " (Paid)" else if (group.items.any { it.isPaid }) " (Partially paid)" else ""
         holder.tvStatus.text = if (statuses.size == 1) statuses.first().uppercase() else "MIXED STATUS"
         
+        val cancelled = group.items.filter { it.status == "Cancelled" || it.status == "Canceled" }
+        if (cancelled.isNotEmpty()) {
+            val reasons = cancelled.groupBy { item ->
+                item.cancellationReason.ifBlank {
+                    if (item.autoCancelledAt > 0L)
+                        "Automatically cancelled because the station did not accept it before the acceptance deadline."
+                    else "No cancellation reason was recorded for this order."
+                }
+            }
+            reasons.forEach { (reason, items) ->
+                val affected = if (cancelled.size != group.items.size || reasons.size > 1)
+                    " (${items.joinToString(", ") { it.productName }})" else ""
+                holder.tvOrderDetails.append("\n\nCancellation reason$affected: $reason")
+            }
+        }
+        val rejected = group.items.firstOrNull { it.status == "Rejected" && it.rejectionReason.isNotBlank() }
+        val chat = holder.itemView.findViewById<MaterialButton>(R.id.btnRejectionChat)
+        chat.visibility = if (rejected != null && role == "User") View.VISIBLE else View.GONE
+        if (rejected != null) {
+            holder.tvOrderDetails.append("\n\nRejection reason: ${rejected.rejectionReason}\nFor any order or payment concerns, contact the water station owner through chat.")
+            chat.setOnClickListener {
+                context.startActivity(android.content.Intent(context, SingleChatActivity::class.java)
+                    .putExtra("CURRENT_USERNAME", rejected.customerName)
+                    .putExtra("CHAT_WITH_USERNAME", rejected.stationOwnerUsername))
+            }
+        } else chat.setOnClickListener(null)
+
         // Customer Info Logic (Station Owner View)
         if (role != "User") {
             holder.layoutCustomerInfo.visibility = View.VISIBLE

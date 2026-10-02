@@ -234,6 +234,7 @@ class UserHomeActivity : AppCompatActivity() {
                                 if (status == "Cancelled" && order.autoCancelledAt > 0L) continue
                                 // Completed receipts have one persisted notification for the entire checkout.
                                 if (status == "Delivered" && order.deliveryReceipt != null) continue
+                                if (status == "Rejected" && order.rejectionReason.isNotBlank()) continue
                                 
                                 val title = when (status) {
                                     "Accepted" -> "Order Accepted!"
@@ -400,6 +401,11 @@ class UserHomeActivity : AppCompatActivity() {
         val rvProducts = inventoryView.findViewById<RecyclerView>(R.id.rvStationProducts)
 
         tvStationName.text = station.name
+        inventoryView.findViewById<MaterialButton>(R.id.btnStationReviews).setOnClickListener {
+            startActivity(Intent(this, StationReviewsActivity::class.java)
+                .putExtra("STATION_USERNAME", station.username)
+                .putExtra("STATION_NAME", station.name))
+        }
         val recurringCheck = inventoryView.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.checkRecurringDelivery)
         val recurringForm = inventoryView.findViewById<LinearLayout>(R.id.recurringDeliveryForm)
         val recurringHint = inventoryView.findViewById<TextView>(R.id.tvRecurringDeliveryHint)
@@ -438,7 +444,7 @@ class UserHomeActivity : AppCompatActivity() {
             ContextCompat.getColor(this, if (stationIsOpen) R.color.mint_soft else R.color.peach_soft)
         )
         if (!stationIsOpen) {
-            tvSubtitle.text = "This station is not accepting orders right now"
+            tvSubtitle.text = "This station is closed. You can place an order for later."
         }
         btnBuy.isEnabled = false
         btnBack.setOnClickListener { showStations() }
@@ -463,7 +469,6 @@ class UserHomeActivity : AppCompatActivity() {
                 inventoryProducts,
                 isUserView = true,
                 onOrder = { product, quantity ->
-                    if (!ensureStationOpen(station)) return@ProductAdapter
                     if (quantity <= 0) {
                         Toast.makeText(this, "Enter a valid quantity", Toast.LENGTH_SHORT).show()
                         return@ProductAdapter
@@ -578,7 +583,6 @@ class UserHomeActivity : AppCompatActivity() {
                 refillOptions,
                 isUserView = true,
                 onOrder = { _, quantity ->
-                    if (!ensureStationOpen(station)) return@ProductAdapter
                     if (quantity <= 0) {
                         Toast.makeText(this, "Enter a valid number of empty containers", Toast.LENGTH_SHORT).show()
                         return@ProductAdapter
@@ -652,7 +656,6 @@ class UserHomeActivity : AppCompatActivity() {
         quantity: Int,
         instructions: String
     ) {
-        if (!ensureStationOpen(station)) return
         val customer = currentUser ?: return
         val refillId = "REFILL_${station.username}"
         val cartItem = CartItem(
@@ -723,16 +726,6 @@ class UserHomeActivity : AppCompatActivity() {
             }
     }
 
-    private fun ensureStationOpen(station: User): Boolean {
-        if (station.isStationOpen()) return true
-        Toast.makeText(
-            this,
-            "${station.name.ifBlank { "This station" }} is currently closed. " +
-                station.operatingHoursLabel(),
-            Toast.LENGTH_LONG
-        ).show()
-        return false
-    }
 
     private fun openSubscriptions() {
         val user = currentUser ?: return

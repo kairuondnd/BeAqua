@@ -197,6 +197,13 @@
             android:gravity="center"
             android:visibility="gone"/>
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRejectionChat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Contact station through chat"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/tvOrderDate"
             android:layout_width="match_parent"

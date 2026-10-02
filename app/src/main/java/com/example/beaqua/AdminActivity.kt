@@ -15,6 +15,30 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 
 class AdminActivity : AppCompatActivity() {
+    private var recoveryListener: com.google.firebase.firestore.ListenerRegistration? = null
+
+    override fun onStart() {
+        super.onStart()
+        val button = findViewById<MaterialButton>(R.id.btnPasswordRequests)
+        button.setOnClickListener { PasswordRecovery.inbox(this) }
+        recoveryListener = PasswordRecovery.requests.whereEqualTo("status", "Pending")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                button.text = "Password recovery requests (${snapshot.size()})"
+                snapshot.documentChanges.filter { it.type == com.google.firebase.firestore.DocumentChange.Type.ADDED }
+                    .forEach { change ->
+                        NotificationHelper.showNotification(this, "Password recovery request",
+                            "${change.document.getString("username").orEmpty()} forgot their password. Check password recovery requests.",
+                            Intent(this, AdminActivity::class.java), change.document.id.hashCode())
+                    }
+            }
+    }
+
+    override fun onStop() {
+        recoveryListener?.remove()
+        recoveryListener = null
+        super.onStop()
+    }
 
     private val applications = mutableListOf<User>()
     private lateinit var adapter: KycApplicationAdapter
@@ -60,6 +84,9 @@ class AdminActivity : AppCompatActivity() {
             finish()
         }
 
+        findViewById<MaterialButton>(R.id.btnAdminAccounts).setOnClickListener {
+            AdminAccountDirectory.show(this)
+        }
         loadApplications()
     }
 
