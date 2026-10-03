@@ -80,6 +80,16 @@
             app:layout_constraintStart_toStartOf="@+id/tvStationName"
             app:layout_constraintTop_toBottomOf="@+id/tvStationAddress" />
 
+        <ImageButton
+            android:id="@+id/btnFavoriteStation"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/btn_star_big_off"
+            android:contentDescription="Favorite station"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnViewInventory"
             style="@style/Widget.Material3.Button.TonalButton"
@@ -91,7 +101,7 @@
             app:cornerRadius="16dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@id/btnFavoriteStation" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

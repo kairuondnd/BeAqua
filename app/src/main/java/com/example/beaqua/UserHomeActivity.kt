@@ -376,7 +376,18 @@ class UserHomeActivity : AppCompatActivity() {
 
         FirebaseHelper.getApprovedStationOwners().addOnSuccessListener { result ->
             val stations = result.toObjects(User::class.java)
-            val adapter = StationAdapter(stations) { station ->
+            val customer = currentUser ?: return@addOnSuccessListener
+            val adapter = StationAdapter(stations, customer.favoriteStationUsernames,
+                customer.latitude, customer.longitude, saveFavorite = { station, favorite ->
+                val change = if (favorite) com.google.firebase.firestore.FieldValue.arrayUnion(station.username)
+                    else com.google.firebase.firestore.FieldValue.arrayRemove(station.username)
+                FirebaseHelper.usersCollection.document(customer.username)
+                    .update("favoriteStationUsernames", change).addOnSuccessListener {
+                        customer.favoriteStationUsernames = if (favorite)
+                            (customer.favoriteStationUsernames + station.username).distinct()
+                        else customer.favoriteStationUsernames.filterNot { it == station.username }
+                    }
+            }) { station ->
                 showStationInventory(station)
             }
             rvStations.adapter = adapter

@@ -12,6 +12,7 @@ data class User(
     var contactNumber: String = "",
     var address: String = "",
     var addressLine2: String = "",
+    var favoriteStationUsernames: List<String> = emptyList(),
     var username: String = "",
     var password: String = "",
     var supabaseUserId: String = "",
